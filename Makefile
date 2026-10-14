@@ -19,7 +19,7 @@ test-leads:
 	@cd frontend && npm test -- src/Leads.test.tsx
 
 test-discovery:
-	@cd backend && .venv/bin/python -m pytest tests/test_discovery.py
+	@cd backend && .venv/bin/python -m pytest tests/test_discovery.py tests/test_discovery_resolution.py
 	@cd frontend && npm test -- src/Discovery.test.tsx
 
 test-shell:
@@ -28,7 +28,7 @@ test-shell:
 
 # Includes URL input, network/robots/redirect checks, provider budgets and local access controls.
 test-security:
-	@cd backend && .venv/bin/python -m pytest tests/test_audit_network.py tests/test_audit_runner.py tests/test_audit_manager.py tests/test_health.py tests/test_discovery.py tests/test_leads.py::test_reject_invalid_or_nonpublic_url
+	@cd backend && .venv/bin/python -m pytest tests/test_audit_network.py tests/test_audit_runner.py tests/test_audit_manager.py tests/test_health.py tests/test_discovery.py tests/test_discovery_resolution.py tests/test_leads.py::test_reject_invalid_or_nonpublic_url
 
 # Once per completed checkpoint (or after additional changes/failures invalidate the result).
 # Browser/provider checks remain separate and explicitly selected; no external calls here.

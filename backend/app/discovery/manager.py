@@ -77,7 +77,12 @@ class DiscoveryManager:
     async def work(self, identifier, query):
         try:
             self.change(identifier, status='running', progress='Preparing configured provider search')
-            async def progress(message): self.change(identifier, progress=message)
+            diagnostics = []
+            async def progress(message, diagnostic=None):
+                if diagnostic is not None:
+                    diagnostics.append(diagnostic)
+                    self.change(identifier, progress=message, diagnostics=diagnostics.copy())
+                else: self.change(identifier, progress=message)
             async with asyncio.timeout(100):
                 result = await self.provider.search(query, progress, self.cache_get, self.cache_put)
             self.change(identifier, status='complete', progress=f"Search finished: {len(result['items'])} source records", finished_at=now(), result=result)

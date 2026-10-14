@@ -208,3 +208,6 @@ dl dt { flex-shrink: 0; } dl dd { text-align: right; }
 .discovery-row .check-label { margin: 0; }
 .search-fields input, .search-fields select { color: var(--text); }
 @media (max-width: 760px) { .discovery-row { flex-wrap: wrap; gap: 12px; } .discovery-row .business-details { flex-basis: 75%; } }
+/* Bounded provider evidence remains readable in narrow discovery cards. */
+.discovery-review .audit-evidence { overflow-wrap: anywhere; white-space: pre-wrap; }
+.discovery-review .helper { overflow-wrap: anywhere; }

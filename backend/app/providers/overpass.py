@@ -10,6 +10,8 @@ import unicodedata
 from urllib.parse import urlencode, urlsplit
 from app.auditing.network import AuditFailure, SafeFetcher
 from app.services.urls import normalize_url
+from app.providers.locations import parse_location, location_query, valid_bounds, boundary_is_small, PLACE_TYPES
+from app.providers.diagnostics import trace, failure_kind
 
 ATTRIBUTION = '© OpenStreetMap contributors'
 LICENCE_URL = 'https://opendatacommons.org/licenses/odbl/1-0/'
@@ -21,14 +23,15 @@ CATEGORIES = {
     'salon': ('shop', 'hairdresser'), 'gym': ('leisure', 'fitness_centre'), 'shop': ('shop', None),
     'office': ('office', None), 'car repair': ('shop', 'car_repair'),
 }
-ALIASES = {'cafes': 'cafe', 'coffee': 'cafe', 'coffee shop': 'cafe', 'restaurants': 'restaurant', 'shops': 'shop', 'retail': 'shop', 'hotels': 'hotel', 'hairdresser': 'salon'}
+ALIASES = {'cafes': 'cafe', 'coffee': 'cafe', 'coffee shop': 'cafe', 'restaurants': 'restaurant', 'shops': 'shop', 'retail': 'shop', 'hotels': 'hotel', 'hairdresser': 'salon', 'bakeries': 'bakery', 'dentists': 'dentist', 'pharmacies': 'pharmacy', 'salons': 'salon', 'gyms': 'gym', 'offices': 'office'}
 BUSINESS_AMENITIES = 'cafe|restaurant|fast_food|bar|pub|dentist|pharmacy|clinic|bank|veterinary|fuel'
 
 
 class ProviderFailure(Exception):
-    def __init__(self, message, retry_seconds=60):
+    def __init__(self, message, retry_seconds=60, code='provider_error'):
         super().__init__(message)
         self.retry_seconds = retry_seconds
+        self.code = code
 
 
 def text(value, maximum=200):
@@ -52,9 +55,17 @@ def normalized_category(value):
     return ALIASES.get(key, key)
 
 
-def business_query(category, latitude, longitude, limit):
+def business_query(category, latitude, longitude, limit, radius=RADIUS, boundary=None):
     key = normalized_category(category)
-    area = f'(around:{RADIUS},{latitude:.7f},{longitude:.7f})'
+    if boundary:
+        bounds = boundary['bounds']
+        if not boundary_is_small(bounds): raise ProviderFailure('Administrative boundary exceeds the safe 16 km² / 5 km-span bounding-box budget. Select nearby with 500 m or provide a smaller boundary.', code='area_too_large')
+        area_id = 3600000000 + boundary['id']
+        area = f'(area.target)({",".join(f"{n:.7f}" for n in bounds)})'
+        prefix = f'area({area_id})->.target;.target out ids;'
+    else:
+        area = f'(around:{radius},{latitude:.7f},{longitude:.7f})'
+        prefix = ''
     if key in CATEGORIES:
         tag, value = CATEGORIES[key]
         selectors = [f'[{json.dumps(tag)}' + (f'={json.dumps(value)}]' if value else ']')]
@@ -64,7 +75,7 @@ def business_query(category, latitude, longitude, limit):
         keyword = f'["name"~{json.dumps(re.escape(category), ensure_ascii=False)},i]'
     queries = ''.join(f'nwr{area}{selector}{keyword};' for selector in selectors)
     cap = min(200, max(20, limit * 4))
-    return f'[out:json][timeout:20][maxsize:16777216];({queries});out center {cap};', cap
+    return f'[out:json][timeout:20][maxsize:16777216];{prefix}({queries});out center {cap};', cap
 
 
 def parse_document(body):
@@ -73,12 +84,14 @@ def parse_document(body):
     if not isinstance(document, dict) or not isinstance(document.get('elements'), list):
         raise ProviderFailure('Provider response is missing an elements list.')
     if document.get('remark'):
-        raise ProviderFailure('Overpass reported an incomplete or failed query. Results were not presented as a successful search.')
+        remark = document['remark'] if isinstance(document['remark'], str) else 'Non-text provider remark'
+        code, hint = failure_kind(200, remark)
+        raise ProviderFailure('Overpass reported an incomplete or failed query. ' + hint, code=code)
     if len(document['elements']) > 1000: raise ProviderFailure('Provider returned more records than this bounded search permits.')
     return document
 
 
-def parse_businesses(document, query, center, cap):
+def parse_businesses(document, query, center, cap, scope='nearby', boundary=None):
     items, identities, physical, invalid, duplicates = [], set(), set(), 0, 0
     fetched_at = datetime.now(timezone.utc).isoformat()
     for element in document['elements'][:cap]:
@@ -100,7 +113,11 @@ def parse_businesses(document, query, center, cap):
         dy = math.radians(latitude - center['latitude']); dx = math.radians(longitude - center['longitude'])
         haversine = math.sin(dy/2)**2 + math.cos(math.radians(latitude))*math.cos(math.radians(center['latitude']))*math.sin(dx/2)**2
         distance = 6371000 * 2 * math.asin(min(1, math.sqrt(haversine)))
-        if distance > RADIUS + 100: invalid += 1; continue
+        if scope == 'boundary':
+            south,west,north,east = boundary['bounds']
+            inside = south <= latitude <= north and west <= longitude <= east
+        else: inside = distance <= query.radius_metres + 100
+        if not inside: invalid += 1; continue
         source_id = f'{kind}/{identifier}'
         name = text(tags.get('name')) or text(tags.get('name:en'))
         raw_website = text(tags.get('website'), 2048) or text(tags.get('contact:website'), 2048)
@@ -122,10 +139,10 @@ def parse_businesses(document, query, center, cap):
             'warnings': [warning] if warning else []})
         if len(items) == query.limit: break
     return {'items': items, 'invalid_records': invalid, 'duplicates_removed': duplicates, 'candidate_cap': cap,
-        'sample_may_be_truncated': len(document['elements']) >= cap, 'center': center, 'radius_metres': RADIUS,
+        'sample_may_be_truncated': len(document['elements']) >= cap, 'center': center, 'radius_metres': query.radius_metres if scope == 'nearby' else None, 'search_scope': scope, 'boundary': boundary if scope == 'boundary' else None,
         'attribution': ATTRIBUTION, 'copyright_url': COPYRIGHT_URL, 'licence_url': LICENCE_URL, 'fetched_at': fetched_at,
         'limitations': ['OSM coverage is incomplete; all business details and website availability remain unverified.',
-            'This is a bounded sample within 2 km of the resolved center, not a complete city/country directory.',
+            f'This is a bounded {query.radius_metres} m nearby sample, not a complete city/country directory.' if scope == 'nearby' else 'This is a candidate-capped sample inside the resolved administrative area and its small bounding box; not a complete directory.',
             'Website missing means no usable website tag was returned; it does not prove the business has no website.',
             'Distinct branches sharing a website are preserved; source ID and exact name/position duplicates are removed.']}
 
@@ -142,7 +159,7 @@ class OverpassProvider:
         self.endpoint = canonical
         self.fetcher_factory = fetcher_factory
 
-    async def request(self, fetcher, statement, progress):
+    async def request(self, fetcher, statement, progress, *, stage="provider"):
         for attempt in range(2):
             if attempt:
                 await progress('Retrying the same provider once after permitted backoff')
@@ -150,7 +167,11 @@ class OverpassProvider:
                 response = await fetcher.post(self.endpoint, content=urlencode({'data': statement}).encode(),
                     max_bytes=8 * 1024 * 1024, timeout=35, read_timeout=30,
                     user_agent='ClientScoutAI/0.3B (+https://github.com/sahilbhardwaj037037-sys; local single-user)')
-            except AuditFailure as error: raise ProviderFailure('Provider network request stopped: ' + str(error)) from None
+            except AuditFailure as error:
+                await progress(f'{stage}: provider transport failed', diagnostic=trace(statement,stage,failure=error))
+                raise ProviderFailure(f'{stage}: provider network request stopped: ' + str(error), code=error.code) from None
+            evidence = trace(statement,stage,response=response)
+            await progress(f'{stage}: received provider HTTP {response.status}', diagnostic=evidence)
             if response.status in {429, 503}:
                 wait = 30
                 header = response.headers.get('retry-after')
@@ -165,42 +186,91 @@ class OverpassProvider:
                     await asyncio.sleep(wait)
                     continue
                 raise ProviderFailure(f'Provider returned HTTP {response.status}. Wait before manually retrying; no alternate source was substituted.', wait)
-            if response.status != 200: raise ProviderFailure(f'Overpass returned HTTP {response.status}; check provider configuration or try later.')
-            return parse_document(response.body)
+            if response.status != 200:
+                code,hint=failure_kind(response.status,evidence.get('body_excerpt',''))
+                raise ProviderFailure(f'{stage}: Overpass HTTP {response.status}. {hint} See saved request diagnostics.',code=code)
+            try: return parse_document(response.body)
+            except ProviderFailure as error:
+                raise ProviderFailure(f'{stage}: HTTP 200 response rejected ({error.code}). {error} See saved provider remark and query.',error.retry_seconds,error.code) from None
         raise ProviderFailure('Provider retry budget exhausted.')
 
     async def search(self, query, progress, cache_get, cache_put):
-        full_key = cache_key(self.endpoint, 'business-search', query.model_dump())
+        full_key = cache_key(self.endpoint, 'business-search-v2', query.model_dump())
         cached = cache_get(full_key)
         if cached is not None:
             await progress('Using an attributed cached provider result')
             return dict(cached, cache_hit=True)
+        requested = parse_location(query.location)
         async with self.fetcher_factory() as fetcher:
-            parts = query.location.split(',')
-            try:
-                latitude, longitude = map(float, parts) if len(parts) == 2 else (None, None)
-            except ValueError: latitude, longitude = None, None
-            if latitude is not None:
-                center = {'latitude': latitude, 'longitude': longitude, 'label': query.location, 'kind': 'User-supplied coordinates'}
+            if requested.coordinates:
+                latitude,longitude = requested.coordinates
+                center = {'latitude':latitude,'longitude':longitude,'label':query.location,'kind':'User-supplied coordinates'}
             else:
-                location_key = cache_key(self.endpoint, 'place', query.location.casefold())
+                location_key = cache_key(self.endpoint,'place-v2',query.location.casefold())
                 center = cache_get(location_key)
                 if center is None:
-                    await progress('Resolving the exact OSM place label')
-                    literal = json.dumps('^' + re.escape(query.location) + '$', ensure_ascii=False)
-                    statement = f'[out:json][timeout:15][maxsize:8388608];(node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|country)$"]["name"~{literal},i];node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|country)$"]["name:en"~{literal},i];);out 10;'
-                    data = await self.request(fetcher, statement, progress)
-                    places = {element['id']: element for element in data['elements'] if isinstance(element, dict) and element.get('type') == 'node' and type(element.get('id')) is int and 0 < element['id'] <= 2**63 - 1 and location_point(element) is not None and isinstance(element.get('tags'), dict) and element['tags'].get('place') in {'city','town','village','hamlet','suburb','neighbourhood','country'} and any(isinstance(element['tags'].get(key), str) and element['tags'][key].casefold() == query.location.casefold() for key in ['name','name:en'])}
-                    if not places: raise ProviderFailure('No exact OSM place label found. Try a local/English place name or latitude, longitude coordinates.')
-                    if len(places) != 1: raise ProviderFailure('Location is ambiguous in OSM. Enter latitude, longitude for the intended city/area instead of choosing a location silently.')
-                    place = next(iter(places.values())); latitude, longitude = location_point(place)
-                    center = {'latitude': latitude, 'longitude': longitude, 'label': text(place['tags'].get('name')) or query.location, 'kind': 'OSM place label', 'source_url': f"https://www.openstreetmap.org/node/{place['id']}"}
-                    cache_put(location_key, center)
+                    await progress('Resolving country-qualified place/boundary metadata before businesses')
+                    data = await self.request(fetcher,location_query(requested),progress,stage='location_resolution')
+                    center = resolve_location(data,requested)
+                    cache_put(location_key,center)
                     await asyncio.sleep(2)
-            latitude, longitude = center['latitude'], center['longitude']
-            await progress('Querying bounded OSM business records')
-            statement, cap = business_query(query.category, latitude, longitude, query.limit)
-            document = await self.request(fetcher, statement, progress)
-            result = parse_businesses(document, query, center, cap)
-            cache_put(full_key, result)
-            return dict(result, cache_hit=False)
+            boundary = center.get('boundary')
+            scope = query.search_scope
+            if scope == 'boundary':
+                if not boundary: raise ProviderFailure('No unambiguous administrative boundary was resolved. Use osm:relation/ID for an administrative boundary, or select nearby coordinates.',code='boundary_unresolved')
+                if not boundary_is_small(boundary['bounds']): raise ProviderFailure('Resolved boundary exceeds the safe 16 km² / 5 km-span bounding-box budget. Select nearby (500 m recommended), or a smaller boundary. No city-wide business request was sent.',code='area_too_large')
+            elif scope == 'auto': scope = 'boundary' if boundary and boundary_is_small(boundary['bounds']) else 'nearby'
+            warnings = []
+            if scope == 'nearby' and boundary:
+                warnings.append('Using a nearby sample, not the entire resolved administrative boundary. Its bounding box exceeds the small-area budget.' if not boundary_is_small(boundary['bounds']) else 'Nearby mode was requested; administrative membership is not enforced for this sample.')
+            if scope == 'nearby' and requested.relation_id:
+                warnings.append('The nearby center is the boundary bounding-box center; it is not guaranteed inside the boundary. Choose coordinates for an intentional local fallback.')
+            await progress(f'Querying {"small administrative boundary" if scope == "boundary" else str(query.radius_metres) + " m nearby sample"}')
+            statement, cap = business_query(query.category,center['latitude'],center['longitude'],query.limit,query.radius_metres,boundary if scope == 'boundary' else None)
+            document = await self.request(fetcher,statement,progress,stage='business_search')
+            if scope == 'boundary':
+                area_id = 3600000000 + boundary['id']
+                if not any(isinstance(item,dict) and item.get('type')=='area' and item.get('id')==area_id for item in document['elements']):
+                    raise ProviderFailure('Provider has no generated area for this boundary. Try nearby coordinates; no administrative results were claimed.',code='boundary_area_missing')
+                document = dict(document,elements=[item for item in document['elements'] if not (isinstance(item,dict) and item.get('type')=='area' and item.get('id')==area_id)])
+            result = parse_businesses(document,query,center,cap,scope,boundary)
+            result['limitations'].extend(warnings)
+            cache_put(full_key,result)
+            return dict(result,cache_hit=False)
+
+
+def resolve_location(document,requested):
+    elements = document['elements']
+    if requested.country:
+        countries = {item.get('id') for item in elements if isinstance(item,dict) and item.get('type')=='area' and type(item.get('id')) is int and item['id']>0}
+        if len(countries)!=1: raise ProviderFailure('Provider did not resolve exactly one country area. Check country code or use coordinates; no businesses requested.',code='country_area_unavailable')
+        elements = [item for item in elements if not (isinstance(item,dict) and item.get('type')=='area')]
+    if len(elements) >= 11: raise ProviderFailure('Location metadata candidate cap reached; name may be ambiguous. Add a country qualifier or use coordinates/osm:relation/ID. No businesses requested.',code='ambiguous_location')
+    nodes, boundaries = {}, {}
+    for element in elements:
+        if not isinstance(element,dict) or type(element.get('id')) is not int or not 0<element['id']<=2**63-1 or not isinstance(element.get('tags'),dict): continue
+        tags = element['tags']; identifier=element['id']
+        if requested.relation_id:
+            if element.get('type')!='relation' or identifier!=requested.relation_id: continue
+        elif not any(isinstance(tags.get(key),str) and tags[key].casefold()==requested.label.casefold() for key in ('name','name:en')): continue
+        if element.get('type')=='node' and tags.get('place') in PLACE_TYPES and location_point(element): nodes[identifier]=element
+        elif element.get('type')=='relation' and tags.get('boundary')=='administrative' and valid_bounds(element.get('bounds')):
+            boundaries[identifier]=element
+    if len(nodes)>1 or len(boundaries)>1: raise ProviderFailure('Location is ambiguous. Add a country qualifier or use coordinates/osm:relation/ID; no businesses requested.',code='ambiguous_location')
+    if not nodes and not boundaries: raise ProviderFailure('No exact OSM place label or administrative boundary found for the supplied location/country. Check spelling or use coordinates/osm:relation/ID.',code='location_not_found')
+    node = next(iter(nodes.values()),None); relation = next(iter(boundaries.values()),None)
+    boundary = None
+    if relation:
+        bounds=valid_bounds(relation['bounds'])
+        boundary={'id':relation['id'],'bounds':bounds,'name':text(relation['tags'].get('name')) or 'Unnamed source boundary','source_url':f"https://www.openstreetmap.org/relation/{relation['id']}"}
+    if node:
+        latitude,longitude=location_point(node)
+        if boundary:
+            south,west,north,east=boundary['bounds']
+            if not south<=latitude<=north or not west<=longitude<=east: raise ProviderFailure('Same-name place and boundary metadata disagree spatially. Use coordinates/osm:relation/ID; no businesses requested.',code='ambiguous_location')
+        label=text(node['tags'].get('name')) or requested.label
+        kind='OSM place label'; source_url=f"https://www.openstreetmap.org/node/{node['id']}"
+    else:
+        south,west,north,east=boundary['bounds']; latitude=(south+north)/2; longitude=(west+east)/2
+        label=boundary['name']; kind='OSM administrative bounding-box center'; source_url=boundary['source_url']
+    return {'latitude':latitude,'longitude':longitude,'label':label,'kind':kind,'source_url':source_url,'country_filter':requested.country,'boundary':boundary}

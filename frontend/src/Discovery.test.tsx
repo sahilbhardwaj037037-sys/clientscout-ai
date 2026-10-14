@@ -20,7 +20,7 @@ it('submits bounded search values and saves reviewed IDs only with licence confi
   expect(screen.getByLabelText('Result limit')).toHaveValue(10)
   await user.selectOptions(screen.getByLabelText('Website presence'), 'without')
   await user.click(screen.getByRole('button', { name: 'Start search' }))
-  expect(fetch).toHaveBeenCalledWith('/api/discovery/searches', expect.objectContaining({ method: 'POST', body: JSON.stringify({ location: '52.2, 0.1', category: 'cafe', limit: 10, provider: 'osm_overpass', website_filter: 'without' }) }))
+  expect(fetch).toHaveBeenCalledWith('/api/discovery/searches', expect.objectContaining({ method: 'POST', body: JSON.stringify({ location: '52.2, 0.1', category: 'cafe', limit: 10, provider: 'osm_overpass', website_filter: 'without', search_scope: 'auto', radius_metres: 2000 }) }))
   expect(await screen.findByText('Test fixture café')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Save selected · 0' })).toBeDisabled()
   await user.click(screen.getByLabelText('Select Test fixture café'))
@@ -83,4 +83,30 @@ it('loads saved discoveries and only offers audits for existing website tags', a
   expect(await screen.findByText('Test fixture café')).toBeInTheDocument()
   expect(screen.getAllByRole('link', { name: 'Audit website' })).toHaveLength(1)
   expect(screen.getByRole('link', { name: 'Audit website' })).toHaveAttribute('href', '/website-audit?url=https%3A%2F%2Fexample.com%2F')
+})
+
+it('shows classified HTTP 200 remark diagnostics and prepares a smaller fallback without a request', async () => {
+  const diagnostic = { stage: 'location_resolution', query: '[out:json][timeout:15];node["name"="London"];out 11;', query_sha256: 'a'.repeat(64), http_status: 200, code: 'query_timeout', hint: 'Provider query timeout. Try a smaller nearby sample.', provider_remark: 'runtime error: Query timed out after 15 seconds.', body_excerpt: '{"remark":"runtime error: Query timed out after 15 seconds."}' }
+  vi.mocked(fetch).mockImplementation(async url => respond(String(url).endsWith('/config') ? config : String(url).includes('?') ? empty : { ...run, query: { ...run.query, location: 'London, UK', category: 'restaurant' }, status: 'error', result: null, error: 'location_resolution: HTTP 200 response rejected (query_timeout).', diagnostics: [diagnostic] }))
+  mount('/find-leads?discovery=1'); const user = userEvent.setup()
+  expect(await screen.findByRole('alert')).toHaveTextContent('HTTP 200')
+  await user.click(screen.getByText('Request diagnostics', { exact: true }))
+  expect(screen.getByText(/Provider remark: runtime error/)).toBeInTheDocument()
+  expect(screen.getByText(/location_resolution · HTTP 200/)).toBeInTheDocument()
+  const before = vi.mocked(fetch).mock.calls.length
+  await user.click(screen.getByRole('button', { name: 'Prepare 500 m nearby fallback' }))
+  expect(screen.getByLabelText('Nearby radius')).toHaveValue('500')
+  expect(screen.getByLabelText('Search scope')).toHaveValue('nearby')
+  expect(screen.getByLabelText('Location')).toHaveValue('London, UK')
+  expect(vi.mocked(fetch).mock.calls).toHaveLength(before)
+})
+
+it('accepts bounded administrative evidence and rejects inconsistent scope/diagnostics', async () => {
+  const scoped = { ...run, result: { ...run.result, search_scope: 'boundary', radius_metres: null, boundary: { id: 100, name: 'Small fixture boundary', bounds: [52.19,.09,52.21,.11], source_url: 'https://www.openstreetmap.org/relation/100' } } }
+  expect(validDiscoveryResponse('/discovery/searches/1', scoped)).toBe(true)
+  expect(validDiscoveryResponse('/discovery/searches/1', { ...scoped, result: { ...scoped.result, radius_metres: 2000 } })).toBe(false)
+  expect(validDiscoveryResponse('/discovery/searches/1', { ...run, diagnostics: [{ query: 'untrusted incomplete object' }] })).toBe(false)
+  vi.mocked(fetch).mockImplementation(async url => respond(String(url).endsWith('/config') ? config : String(url).includes('?') ? empty : scoped))
+  mount('/find-leads?discovery=1')
+  expect(await screen.findByText(/Small administrative boundary: Small fixture boundary/)).toBeInTheDocument()
 })

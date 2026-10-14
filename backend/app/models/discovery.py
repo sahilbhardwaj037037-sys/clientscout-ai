@@ -16,6 +16,7 @@ class DiscoverySearch(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cooldown_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    diagnostics: Mapped[list | None] = mapped_column(JSON, nullable=True)
     error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
 

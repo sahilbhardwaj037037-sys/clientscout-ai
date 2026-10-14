@@ -11,7 +11,7 @@ if (process.env.CLIENTSCOUT_QA_LIVE_DISCOVERY !== 'true') throw new Error('Set C
   try {
     await page.goto(base + '/find-leads');
     await page.getByText('Backend connected', { exact: true }).waitFor();
-    await page.getByPlaceholder('Exact place name or latitude, longitude').fill('52.2053, 0.1218');
+    await page.getByPlaceholder('London, UK or latitude, longitude').fill('52.2053, 0.1218');
     await page.getByLabel('Business category or keyword').fill('cafe');
     await page.getByLabel('Result limit').fill('2');
     await page.getByRole('button', { name: 'Start search', exact: true }).click();

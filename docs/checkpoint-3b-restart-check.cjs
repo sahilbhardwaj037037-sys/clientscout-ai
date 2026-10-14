@@ -9,7 +9,7 @@ const id = process.env.CLIENTSCOUT_QA_DISCOVERY_ID || '1';
     await page.goto(base + '/find-leads?discovery=' + id);
     await page.getByText('Backend connected', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Retry search', exact: true }).waitFor();
-    assert.equal(await page.getByPlaceholder('Exact place name or latitude, longitude').inputValue(), '52.2053, 0.1218');
+    assert.equal(await page.getByPlaceholder('London, UK or latitude, longitude').inputValue(), '52.2053, 0.1218');
     const run = await (await page.request.get(base + '/api/discovery/searches/' + id)).json();
     const saved = await (await page.request.get(base + '/api/discovery/saved')).json();
     assert.equal(run.status, 'complete'); assert.equal(run.result.items.length, 2); assert.equal(saved.total, 1);

@@ -1,6 +1,7 @@
 """Local leads, permitted URL audits and attributed business discovery. No AI calls."""
 from typing import Literal
 from contextlib import asynccontextmanager
+from app.providers.diagnostics import configure_logging
 from app.discovery.manager import DiscoveryManager
 from app.api.discovery import router as discovery_router
 from app.auditing.manager import AuditManager
@@ -21,6 +22,7 @@ from app.database.session import get_session
 
 @asynccontextmanager
 async def lifespan(application):
+    configure_logging()
     worker = AuditManager(getattr(application.state, 'audit_engine', engine), runner=getattr(application.state, 'audit_runner', run_audit))
     application.state.audit_manager = worker
     worker.recover()
@@ -71,7 +73,7 @@ class HealthResponse(BaseModel):
 @app.get('/api/health', response_model=HealthResponse)
 def health(session: Session = Depends(get_session)):
     revision = session.scalar(text('SELECT version_num FROM alembic_version'))
-    if revision != '0003_discovery':
+    if revision != '0004_discovery_diagnostics':
         raise HTTPException(503, 'Database migration required. Run alembic upgrade head from backend.')
     session.execute(text('SELECT id FROM leads LIMIT 1'))
     session.execute(text('SELECT id FROM audits LIMIT 1'))

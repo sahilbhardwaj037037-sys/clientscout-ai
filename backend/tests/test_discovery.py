@@ -19,7 +19,7 @@ CENTER = {'latitude': 52.2053, 'longitude': 0.1218, 'label': 'Fixture coordinate
 def query(**kw): return SearchCreate(location='52.2053, 0.1218', category='cafe', **kw)
 def node(identifier=1, **tags): return {'type':'node', 'id':identifier, 'lat':52.2053, 'lon':0.1218, 'tags':{'amenity':'cafe', 'name':'Fixture cafe', **tags}}
 def result(elements=None, **kw): return dict(parse_businesses({'elements': elements if elements is not None else [node()]}, query(**kw), CENTER, 20), cache_hit=False)
-async def progress(_): pass
+async def progress(_, diagnostic=None): pass
 
 class Fetcher:
     def __init__(self, responses): self.responses = list(responses); self.calls = []

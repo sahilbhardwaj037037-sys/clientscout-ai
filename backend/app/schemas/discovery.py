@@ -1,4 +1,4 @@
-import math
+from app.providers.locations import parse_location
 from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -10,6 +10,8 @@ class SearchCreate(BaseModel):
     limit: int = Field(default=10, ge=1, le=50, strict=True)
     provider: Literal['osm_overpass'] = 'osm_overpass'
     website_filter: Literal['any', 'with', 'without'] = 'any'
+    radius_metres: Literal[500, 1000, 2000] = 2000
+    search_scope: Literal['auto', 'nearby', 'boundary'] = 'auto'
 
     @field_validator('location', 'category')
     @classmethod
@@ -21,12 +23,7 @@ class SearchCreate(BaseModel):
     @field_validator('location')
     @classmethod
     def coordinates(cls, value):
-        parts = value.split(',')
-        if len(parts) == 2:
-            try: latitude, longitude = map(float, parts)
-            except ValueError: return value
-            if not all(math.isfinite(number) for number in [latitude, longitude]) or not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
-                raise ValueError('Coordinates must be latitude (-90..90), longitude (-180..180).')
+        parse_location(value)
         return value
 
 
@@ -49,6 +46,11 @@ class SearchRead(BaseModel):
     cooldown_until: datetime
     result: dict | None
     error: str | None
+    diagnostics: list[dict] = Field(default_factory=list)
+
+    @field_validator('diagnostics', mode='before')
+    @classmethod
+    def legacy_diagnostics(cls,value): return value or []
 
     @field_validator('created_at', 'finished_at', 'cooldown_until')
     @classmethod
