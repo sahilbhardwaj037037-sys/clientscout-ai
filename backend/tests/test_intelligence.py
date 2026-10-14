@@ -268,3 +268,39 @@ async def test_ai_one_retry_is_counted_against_daily_budget(database,monkeypatch
     manager=AIManager(database,failure);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
     assert manager.read(job['id'])['status']=='error' and len(calls)==1
     with Session(database) as s:assert s.scalar(select(func.count()).select_from(AIUsage))==1
+
+def test_footer_business_email_is_not_lost_after_navigation_link_cap():
+    page=ContactPage()
+    page.feed(''.join(f'<a href="/item/{i}">Item</a>' for i in range(150))+'<footer><a href="MAILTO:info%40example.com?subject=Hello">Email us</a><a href="mailto:john.smith@example.com">Staff member</a></footer>')
+    assert len(page.links)<=100
+    contacts=extract_contacts(page,URL,'Fixture Cafe')
+    assert any(c['value']=='info@example.com' for c in contacts)
+    assert not any('john.smith' in c['value'] for c in contacts)
+
+@pytest.mark.anyio
+async def test_enrichment_preserves_phase_and_policy_failures(monkeypatch):
+    async def no_sleep(_):pass
+    monkeypatch.setattr('app.auditing.robots.asyncio.sleep',no_sleep)
+    class Timed(Fetcher):
+        async def get(self,url,**kwargs):
+            if url==URL:raise AuditFailure('TCP connection timed out.','connect_timeout',diagnostics={'stage':'connect','category':'connection','elapsed_ms':5000})
+            return await super().get(url,**kwargs)
+    status,report,error=await enrich(snapshot(),URL,True,False,progress,lambda:Timed({}))
+    assert status=='error'
+    assert report['failure']['code']=='connect_timeout' and report['failure']['stage']=='connect'
+    assert report['diagnostics'][-1]['url']==URL and report['diagnostics'][-1]['status'] is None
+    status,report,error=await enrich(snapshot(),URL,True,False,progress,lambda:Fetcher({URL+'robots.txt':(200,b'User-agent: *\nDisallow: /',{})}))
+    assert status=='blocked'
+    assert report['failure']['category']=='policy' and report['failure']['code']=='access_restricted'
+
+@pytest.mark.anyio
+async def test_provider_obfuscated_email_is_marked_for_review_without_decoding(monkeypatch):
+    async def no_sleep(_):pass
+    monkeypatch.setattr('app.auditing.robots.asyncio.sleep',no_sleep)
+    protected=b'<title>Fixture Cafe</title><footer><a href="/cdn-cgi/l/email-protection#1234"><span class="__cf_email__" data-cfemail="1234">[email protected]</span></a></footer>'
+    fetcher=Fetcher({URL:(200,protected,{'content-type':'text/html'})})
+    status,report,error=await enrich(snapshot(),URL,True,False,progress,lambda:fetcher)
+    email=next(c for c in report['contacts'] if c['kind']=='email')
+    assert status=='complete' and email['status']=='needs_review' and email['value']==''
+    assert email['source_url']==URL and 'No address decoded or guessed' in email['evidence']
+    assert fetcher.calls==[URL+'robots.txt',URL]

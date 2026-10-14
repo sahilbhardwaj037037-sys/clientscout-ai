@@ -11,7 +11,7 @@ ORG_TYPES={'Organization','LocalBusiness','Restaurant','Store','ProfessionalServ
 
 class ContactPage(HTMLParser):
     def __init__(self):
-        super().__init__(convert_charrefs=True);self.links=[];self.forms=[];self.title='';self.text=[];self.organizations=[];self._title=False;self._script=None;self._hidden=0;self._a=None;self._business_context=0
+        super().__init__(convert_charrefs=True);self.links=[];self.contact_links=[];self.protected_email_links=[];self.forms=[];self.title='';self.text=[];self.organizations=[];self._title=False;self._script=None;self._hidden=0;self._a=None;self._business_context=0
     def handle_starttag(self,tag,attrs):
         a=dict(attrs)
         if tag in {'footer','header','address'}:self._business_context+=1
@@ -19,7 +19,14 @@ class ContactPage(HTMLParser):
         if tag in {'script','style'}:
             self._hidden+=1
             if tag=='script' and a.get('type','').lower()=='application/ld+json':self._script=''
-        if tag=='a' and len(self.links)<100:self._a={'href':a.get('href','')[:2048],'label':(a.get('aria-label') or '')[:200],'business_context':bool(self._business_context)}
+        if tag=='a':
+            href=a.get('href','')[:2048]
+            # Notice provider-protected email references, but do not decode their
+            # anti-harvesting payloads or fetch their reveal/script endpoints.
+            try:protected=urlsplit(href).path=='/cdn-cgi/l/email-protection'
+            except ValueError:protected=False
+            if not self._hidden and protected and len(self.protected_email_links)<10:self.protected_email_links.append(href)
+            self._a={'href':href,'label':(a.get('aria-label') or '')[:200],'business_context':bool(self._business_context)} if len(self.links)<100 or href.lower().startswith(('mailto:','tel:')) and len(self.contact_links)<32 else None
         if tag=='form' and len(self.forms)<5:self.forms.append(a.get('action','')[:2048])
     def handle_data(self,data):
         if self._script is not None and len(self._script)<262144:self._script+=data[:262144-len(self._script)]
@@ -30,7 +37,10 @@ class ContactPage(HTMLParser):
     def handle_endtag(self,tag):
         if tag in {'footer','header','address'}:self._business_context=max(0,self._business_context-1)
         if tag=='title':self._title=False
-        if tag=='a' and self._a:self.links.append(self._a);self._a=None
+        if tag=='a' and self._a:
+            if len(self.links)<100:self.links.append(self._a)
+            elif len(self.contact_links)<32:self.contact_links.append(self._a)
+            self._a=None
         if tag in {'script','style'}:
             if tag=='script' and self._script is not None:
                 try:
@@ -47,7 +57,7 @@ def safe_link(base,raw):
     except (ValueError,TypeError):return None
 
 def role_email(raw,business_name):
-    raw=unquote(raw.removeprefix('mailto:')).split('?')[0].strip().lower()
+    raw=unquote(re.sub(r'^mailto:','',raw,flags=re.I)).split('?')[0].strip().lower()
     if not re.fullmatch(r'[a-z0-9.!#$%&\'*+/=?^_`{|}~-]{1,64}@[a-z0-9.-]{1,190}\.[a-z]{2,24}',raw) or '..' in raw:return None
     local=raw.split('@')[0];name=re.sub('[^a-z0-9]','',business_name.casefold())
     # Personal staff/name addresses are deliberately excluded, even when public.
@@ -73,10 +83,10 @@ def extract_contacts(page,url,name):
     def add(kind,value,evidence):
         if value and (kind,value) not in [(v['kind'],v['value']) for v in values] and sum(v['kind']==kind for v in values)<3:
             values.append({'kind':kind,'value':value,'evidence':evidence[:300]})
-    for item in page.links:
+    for item in page.links+page.contact_links:
         raw=item['href'];label=item['label'].lower()
-        if raw.startswith('mailto:'):add('email',role_email(raw,name),'Role/business-address mailto link')
-        elif raw.startswith('tel:') and bool(re.fullmatch(r'(call( us| now)?|phone|telephone|tel|contact( us)?|business phone|[+0-9 ()-]+)',label.strip())):add('phone',phone(raw),'Explicitly labelled business telephone link')
+        if raw.lower().startswith('mailto:'):add('email',role_email(raw,name),'Role/business-address mailto link')
+        elif raw.lower().startswith('tel:') and bool(re.fullmatch(r'(call( us| now)?|phone|telephone|tel|contact( us)?|business phone|[+0-9 ()-]+)',label.strip())):add('phone',phone(re.sub(r'^tel:','',raw,flags=re.I)),'Explicitly labelled business telephone link')
         else:
             for kind in ('whatsapp','facebook','instagram','linkedin'):
                 if item.get('business_context'):add(kind,public_url(kind,raw,url),'Public business header/footer link; profile itself was not fetched and profile ownership needs review')

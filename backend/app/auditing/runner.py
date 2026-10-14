@@ -62,6 +62,7 @@ async def run_audit(url, use_pagespeed, progress, reserve_pagespeed, key='', fet
             return ('blocked' if error.code in {'unsafe_url', 'access_restricted'} else 'error'), report, error
         finally:
             report['requests'] = polite.evidence
+            report['diagnostics'] = polite.failures
             report['redirects'] = polite.redirects
             if polite.evidence and polite.evidence[-1].get('retry_after'):
                 report['retry_after'] = polite.evidence[-1]['retry_after']

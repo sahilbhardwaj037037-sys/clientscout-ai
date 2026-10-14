@@ -1,9 +1,10 @@
 import asyncio
 import math
 import time
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
+from datetime import datetime,timezone
 from protego import Protego
-from app.auditing.network import AuditFailure, USER_AGENT
+from app.auditing.network import AuditFailure, USER_AGENT,failure_category
 from app.services.urls import normalize_url
 
 REDIRECTS = {301, 302, 303, 307, 308}
@@ -29,6 +30,22 @@ class PoliteFetcher:
         self.last_request = {}
         self.evidence = []
         self.redirects = []
+        self.failures = []
+        self.last_url = None
+
+    def record_failure(self,kind,url,error):
+        # Request diagnostics never retain query values, exception text or headers.
+        parts=urlsplit(url)
+        host=parts.hostname or ''
+        host=f'[{host}]' if ':' in host else host
+        safe_url=urlunsplit((parts.scheme,host,parts.path,'',''))
+        self.failures.append({'kind':kind,'url':safe_url,'status':None,'code':error.code,'category':failure_category(error.code),'fetched_at':datetime.now(timezone.utc).isoformat(),**error.diagnostics})
+
+    async def get(self,kind,url,**kwargs):
+        self.last_url=url
+        try:return await self.fetcher.get(url,**kwargs)
+        except AuditFailure as error:
+            self.record_failure(kind,url,error);raise
 
     @staticmethod
     def origin(url):
@@ -53,9 +70,9 @@ class PoliteFetcher:
             elapsed = time.monotonic() - self.last_request.get(self.rate_key(current), 0)
             if elapsed < 2: await asyncio.sleep(2 - elapsed)
             self.check_scope(current)
-            response = await self.fetcher.get(current, max_bytes=512 * 1024)
+            response = await self.get('robots',current, max_bytes=512 * 1024)
             self.last_request[self.rate_key(current)] = time.monotonic()
-            self.evidence.append({'kind': 'robots', 'url': current, 'status': response.status, 'fetched_at': response.fetched_at, 'connections': response.connections, 'retry_after': response.headers.get('retry-after')})
+            self.evidence.append({'kind': 'robots', 'url': current, 'status': response.status, 'fetched_at': response.fetched_at, 'connections': response.connections, 'retry_after': response.headers.get('retry-after'),'body_bytes':len(response.body),'elapsed_ms':response.elapsed_ms,'diagnostics':response.diagnostics})
             if response.status in REDIRECTS:
                 if hop == 5:
                     raise AuditFailure('robots.txt redirect limit exceeded.', 'access_restricted')
@@ -90,22 +107,34 @@ class PoliteFetcher:
         raise AuditFailure('robots.txt redirect limit exceeded.', 'access_restricted')
 
     async def page(self, url):
+        failures_before=len(self.failures)
+        self.last_url=url
+        try:return await self._page(url)
+        except AuditFailure as error:
+            if len(self.failures)==failures_before:
+                error.diagnostics.setdefault('stage','policy')
+                self.record_failure('policy',self.last_url or url,error)
+            raise
+
+    async def _page(self, url):
         current = url
         seen = set()
         for hop in range(6):
+            self.last_url=current
             self.check_scope(current)
             if current in seen:
                 raise AuditFailure('Website redirect loop detected.', 'redirect_error')
             seen.add(current)
             rules, delay = await self.robots(current)
+            self.last_url=current
             if rules and not rules.can_fetch(current, USER_AGENT):
                 raise AuditFailure('robots.txt disallows this URL for ClientScoutAudit.', 'access_restricted')
             elapsed = time.monotonic() - self.last_request.get(self.rate_key(current), 0)
             if elapsed < delay:
                 await asyncio.sleep(delay - elapsed)
-            response = await self.fetcher.get(current)
+            response = await self.get('page',current)
             self.last_request[self.rate_key(current)] = time.monotonic()
-            self.evidence.append({'kind': 'page', 'url': current, 'status': response.status, 'fetched_at': response.fetched_at, 'connections': response.connections, 'retry_after': response.headers.get('retry-after')})
+            self.evidence.append({'kind': 'page', 'url': current, 'status': response.status, 'fetched_at': response.fetched_at, 'connections': response.connections, 'retry_after': response.headers.get('retry-after'),'body_bytes':len(response.body),'elapsed_ms':response.elapsed_ms,'diagnostics':response.diagnostics})
             if response.status not in REDIRECTS:
                 return response
             if hop == 5:

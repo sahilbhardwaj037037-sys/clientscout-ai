@@ -84,7 +84,9 @@ async def test_size_limit_and_compressed_expansion_are_bounded():
 async def test_request_timeout_stops_network_work():
     async def resolve(host, port): await asyncio.sleep(5); return ['93.184.216.34']
     async with SafeFetcher(PublicNetworkBackend(resolve)) as fetcher:
-        with pytest.raises(AuditFailure, match='timed out'): await fetcher.get('http://example.com/', timeout=.01)
+        with pytest.raises(AuditFailure, match='timed out') as error: await fetcher.get('http://example.com/', timeout=.01)
+        assert error.value.code=='timeout' and error.value.diagnostics['stage']=='dns'
+        assert 'during dns' in str(error.value)
 
 @pytest.mark.anyio
 async def test_concatenated_gzip_is_not_silently_analyzed_as_partial_html():
@@ -129,3 +131,93 @@ async def test_provider_post_retains_dns_body_and_timeout_protections():
         async def connect_tcp(self,*args,**kw): return httpcore.AsyncMockStream([b'HTTP/1.1 200 OK\r\nContent-Length: 99\r\n\r\n'])
     async with SafeFetcher(PublicNetworkBackend(public,Delegate())) as fetcher:
         with pytest.raises(AuditFailure,match='body size'): await fetcher.post('https://example.com/',content=b'data=x',max_bytes=10)
+
+@pytest.mark.anyio
+async def test_failed_public_address_can_use_one_validated_alternative():
+    calls=[]
+    async def resolve(host,port):return ['93.184.216.34','93.184.216.35','93.184.216.36']
+    class Delegate:
+        async def connect_tcp(self,host,port,**kwargs):
+            calls.append((host,kwargs['timeout']))
+            if len(calls)==1:raise httpcore.ConnectTimeout('untrusted provider exception')
+            return httpcore.AsyncMockStream([b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok'])
+    backend=PublicNetworkBackend(resolve,Delegate())
+    async with SafeFetcher(backend) as fetcher:response=await fetcher.get('http://example.com/')
+    assert response.body==b'ok' and [c[0] for c in calls]==['93.184.216.34','93.184.216.35']
+    assert calls[0][1]<=2.5 and calls[1][1]<=5
+    assert backend.connections[0]['connected_ip']=='93.184.216.35'
+    assert response.diagnostics['connection_attempts'][0]['outcome']=='connect_timeout'
+
+@pytest.mark.anyio
+async def test_address_fallback_stops_at_two_and_never_re_resolves():
+    calls=[];resolutions=[]
+    async def resolve(host,port):resolutions.append(host);return ['93.184.216.34','93.184.216.35','93.184.216.36']
+    class Delegate:
+        async def connect_tcp(self,host,port,**kwargs):calls.append(host);raise httpcore.ConnectError('provider secret')
+    async with SafeFetcher(PublicNetworkBackend(resolve,Delegate())) as fetcher:
+        with pytest.raises(AuditFailure) as error:await fetcher.get('http://example.com/')
+    assert calls==['93.184.216.34','93.184.216.35'] and resolutions==['example.com']
+    assert error.value.code=='connect_error' and 'provider secret' not in str(error.value)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('phase,exception,code',[
+    ('connect',httpcore.ConnectTimeout,'connect_timeout'),
+    ('tls',httpcore.ConnectTimeout,'tls_timeout'),
+    ('tls',httpcore.ConnectError,'tls_error'),
+    ('headers',httpcore.ReadTimeout,'read_timeout'),
+    ('body',httpcore.ReadTimeout,'read_timeout'),
+    ('write',httpcore.WriteTimeout,'write_timeout'),
+])
+async def test_network_failures_have_sanitized_phase_diagnostics(phase,exception,code):
+    async def resolve(host,port):return ['93.184.216.34']
+    class Stream(httpcore.AsyncMockStream):
+        async def start_tls(self,**kwargs):
+            if phase=='tls':raise exception('SECRET URL')
+            return self
+        async def write(self,*args,**kwargs):
+            if phase=='write':raise exception('SECRET URL')
+            return await super().write(*args,**kwargs)
+        async def read(self,*args,**kwargs):
+            if phase=='headers' or phase=='body' and not self._buffer:raise exception('SECRET URL')
+            return await super().read(*args,**kwargs)
+    class Delegate:
+        async def connect_tcp(self,*args,**kwargs):
+            if phase=='connect':raise exception('SECRET URL')
+            return Stream([b'HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\n'])
+    async with SafeFetcher(PublicNetworkBackend(resolve,Delegate())) as fetcher:
+        with pytest.raises(AuditFailure) as error:await fetcher.get('https://example.com/?api_key=PRIVATE_VALUE')
+    assert error.value.code==code
+    assert error.value.diagnostics['stage']=={'headers':'response_headers','body':'response_body'}.get(phase,phase)
+    assert 'SECRET' not in str(error.value) and 'PRIVATE_VALUE' not in repr(error.value.diagnostics)
+
+@pytest.mark.anyio
+async def test_dns_timeout_is_distinct_and_opens_no_socket(monkeypatch):
+    async def records(*args,**kwargs):raise TimeoutError('PRIVATE DNS DETAILS')
+    monkeypatch.setattr(asyncio.get_running_loop(),'getaddrinfo',records)
+    async with SafeFetcher() as fetcher:
+        with pytest.raises(AuditFailure) as error:await fetcher.get('https://example.com/')
+    assert error.value.code=='dns_timeout' and error.value.diagnostics['stage']=='dns'
+    assert error.value.diagnostics['connection_attempts']==[]
+    assert 'PRIVATE' not in str(error.value)
+
+@pytest.mark.anyio
+async def test_last_unused_private_dns_answer_blocks_all_fallback_attempts():
+    calls=[]
+    async def resolve(host,port):return ['93.184.216.34','93.184.216.35','10.0.0.1']
+    class Delegate:
+        async def connect_tcp(self,*args,**kwargs):calls.append(args)
+    async with SafeFetcher(PublicNetworkBackend(resolve,Delegate())) as fetcher:
+        with pytest.raises(AuditFailure) as error:await fetcher.get('https://example.com/')
+    assert error.value.code=='unsafe_url' and calls==[]
+
+@pytest.mark.anyio
+async def test_tcp_cancellation_does_not_start_an_alternative():
+    calls=[];entered=asyncio.Event()
+    async def resolve(host,port):return ['93.184.216.34','93.184.216.35']
+    class Delegate:
+        async def connect_tcp(self,host,*args,**kwargs):calls.append(host);entered.set();await asyncio.Event().wait()
+    async with SafeFetcher(PublicNetworkBackend(resolve,Delegate())) as fetcher:
+        task=asyncio.create_task(fetcher.get('http://example.com/'))
+        await entered.wait();task.cancel()
+        with pytest.raises(asyncio.CancelledError):await task
+    assert calls==['93.184.216.34']

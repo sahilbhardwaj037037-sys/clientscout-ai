@@ -1,7 +1,7 @@
 import asyncio
 from urllib.parse import urlsplit
 from app.auditing.html import analyze_html
-from app.auditing.network import AuditFailure,SafeFetcher
+from app.auditing.network import AuditFailure,SafeFetcher,failure_category
 from app.auditing.robots import PoliteFetcher
 from app.intelligence.contacts import ContactPage,KINDS,extract_contacts,osm_contacts,safe_link
 from app.intelligence.identity import verify_identity
@@ -51,6 +51,10 @@ async def enrich(snapshot,url,official_confirmed,use_directory,progress,fetcher_
                     # If no name evidence, collect no website methods until human verification.
                     if identity['confidence']>=50:
                         page.organizations=organizations
+                        if any(safe_link(response.url,link) and normalize_url(safe_link(response.url,link))[1]==host for link in page.protected_email_links):
+                            report['protected_email_source']={'source_url':response.url,'fetched_at':response.fetched_at}
+                            note='Email links are present but provider-obfuscated in fetched HTML. Review the public address manually in the source website; no email address was inferred or protection decoded.'
+                            if note not in report['limitations']:report['limitations'].append(note)
                         for method in extract_contacts(page,response.url,snapshot.get('name') or ''):
                             method.update(status='needs_review' if method['kind'] in {'facebook','instagram','linkedin'} else 'official_verified' if identity['official'] else 'public_unverified',source_url=response.url,source_kind='website',licence='User-confirmed permitted website access; redistribution rights not established',attribution=snapshot.get('name'),fetched_at=response.fetched_at)
                             report['contacts'].append(method)
@@ -68,9 +72,11 @@ async def enrich(snapshot,url,official_confirmed,use_directory,progress,fetcher_
                             if len(queue)>=2:break
                 except AuditFailure as failure:
                     error=str(failure);report['limitations'].append(error)
+                    report['failure']={'code':failure.code,'category':failure_category(failure.code),**failure.diagnostics}
                     if index==0:report['website_status']='inaccessible'
                     report['retry_after']=failure.retry_after;break
             report['requests']=polite.evidence
+            report['diagnostics']=polite.failures
             if report['identity']['status']=='mismatch':report['contacts']=[c for c in report['contacts'] if c['source_kind']=='osm'];report['website_report']=None;report['business_statements']=[]
         unique={}
         for c in report['contacts']:
@@ -78,5 +84,9 @@ async def enrich(snapshot,url,official_confirmed,use_directory,progress,fetcher_
             if key not in unique or c['status']=='official_verified':unique[key]=c
         report['contacts']=list(unique.values())[:30]
         for kind in KINDS:
-            if not any(c['kind']==kind for c in report['contacts']):report['contacts'].append({'kind':kind,'value':'','status':'source_inaccessible' if error else 'not_found','source_url':url or snapshot.get('source_url'),'source_kind':'bounded_research','licence':None,'attribution':None,'fetched_at':report['pages'][-1]['fetched_at'] if report['pages'] else None,'evidence':'Not observed in supported permitted sources; absence is not established.'})
-    return ('partial' if error and report['pages'] else 'blocked' if error else 'complete'),report,error
+            if not any(c['kind']==kind for c in report['contacts']):
+                protected=report.get('protected_email_source') if kind=='email' and report['identity']['status']!='mismatch' else None
+                report['contacts'].append({'kind':kind,'value':'','status':'needs_review' if protected else 'source_inaccessible' if error else 'not_found','source_url':protected['source_url'] if protected else url or snapshot.get('source_url'),'source_kind':'bounded_research','licence':None,'attribution':None,'fetched_at':protected['fetched_at'] if protected else report['pages'][-1]['fetched_at'] if report['pages'] else None,'evidence':'Provider-obfuscated public email link observed; review the source manually in a browser. No address decoded or guessed.' if protected else 'Not observed in supported permitted sources; absence is not established.'})
+    failed_code=report.get('failure',{}).get('code')
+    status='partial' if error and report['pages'] else 'blocked' if error and failed_code in {'unsafe_url','access_restricted','identity_mismatch','request_budget'} else 'error' if error else 'complete'
+    return status,report,error

@@ -126,3 +126,14 @@ it('shows malformed response errors instead of rendering a fabricated assessment
   expect(await screen.findByRole('alert')).toHaveTextContent('unexpected data response')
   expect(screen.queryByText('Priority 100/100')).not.toBeInTheDocument()
 })
+
+it('shows connection-phase diagnostics and distinguishes protected email review from absence', async () => {
+  const checked = { ...enrichment, status: 'partial', error: 'TCP connection timed out.', report: { ...enrichment.report, contacts: [{ ...contact, value: '', status: 'needs_review', evidence: 'Provider-obfuscated public email link; review in Chrome.' }], failure: { code: 'connect_timeout', category: 'connection', stage: 'connect', elapsed_ms: 5000 }, diagnostics: [{ kind: 'page', url: business.website_url, status: null, code: 'connect_timeout', category: 'connection', connection_attempts: [{ ip: '93.184.216.34', outcome: 'connect_timeout', elapsed_ms: 2500 }] }] } }
+  vi.mocked(fetch).mockImplementation(async url => response(String(url).includes('/targets/lead/') ? { business, identity_id: 1, enrichment: checked, assessment: null } : routes(String(url))))
+  mount(<LeadIntelligence target={{ target_type: 'lead', target_id: 1 }} />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('TCP connection timed out.')
+  await userEvent.setup().click(screen.getByText('Request failure details · connection'))
+  expect(screen.getByText('Failure: connect timeout · stage: connect · 5000 ms')).toBeInTheDocument()
+  expect(screen.getByText('Address requires manual source review')).toBeInTheDocument()
+  expect(screen.queryByText('Not observed in bounded sources')).not.toBeInTheDocument()
+})
