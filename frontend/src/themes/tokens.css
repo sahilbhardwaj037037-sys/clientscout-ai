@@ -1,0 +1,13 @@
+@import "tailwindcss";
+:root {
+  color-scheme: light;
+  --page: #F7F3EB; --sidebar: #F1E9DE; --card: #FFFCF8; --soft: #F3EDE5;
+  --text: #463327; --muted: #796252; --border: #E8DCCC; --action: #6C4F3D; --action-text: #FFFFFF;
+  --status: #486448; --shadow: 0 3px 16px rgb(70 51 39 / 3%);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #332820; --sidebar: #2B211B; --card: #433429; --soft: #514033;
+  --text: #F8F2E8; --muted: #D6C3B1; --border: #665344; --action: #F1E5D5; --action-text: #332820;
+  --status: #BCD2AC; --shadow: 0 3px 16px rgb(0 0 0 / 8%);
+}
