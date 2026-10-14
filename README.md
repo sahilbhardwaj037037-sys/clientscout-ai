@@ -2,7 +2,7 @@
 
 Your Personal Freelance Intelligence Workspace.
 
-**Checkpoint 3B ready for review.** The approved React shell, compass mark, navigation and cream/coffee themes are preserved. Leads now persist locally in SQLite: add website URLs, import CSV, edit details/statuses/notes, search/filter/page the collection and delete with confirmation. Dashboard totals, status counts and recent leads come from the database. High Priority and Drafts Ready remain unavailable until Checkpoint 4; no scores or drafts are fabricated.
+**Checkpoint 4 ready for review; live Gemini verification pending credentials.** The approved shell and cream/coffee themes are preserved. Local leads, imports, audits and attributed discovery now connect to bounded public business contact enrichment, identity review, explainable evidence priority, advanced filters and editable outreach drafts. Dashboard High Priority and Drafts Ready use current qualified assessments and saved drafts. Optional backend-only Gemini assistance is implemented; no live request has been verified because no API key is configured.
 
 ## Install
 
@@ -17,7 +17,7 @@ cd frontend
 npm ci
 ```
 
-No API key is needed. Existing Checkpoint 1 installations should rerun the pip install and `npm ci` to install new dependencies.
+No API key is needed for local scoring/templates, website enrichment or OSM discovery. Gemini assistance requires a backend-only key. Existing installations should rerun the pip install and `npm ci` to install pinned dependencies.
 
 ## Configure once, run locally
 
@@ -89,7 +89,7 @@ npm test
 npm run build
 ```
 
-Backend tests migrate separate temporary databases and never write test leads into your workspace database. Live Chrome checks likewise used temporary databases. See [latest actual results and reproducible browser checks](docs/checkpoint-3a-results.md).
+Backend tests migrate separate temporary databases and never write test leads into your workspace database. Live Chrome checks likewise used temporary databases. See [Checkpoint 4 actual results and focused Chrome verification](docs/checkpoint-4-results.md).
 
 ## Versions, security and remaining scope
 
@@ -97,9 +97,9 @@ Frontend remains React 19.3.0, React Router 7.18.4, Vite 8.3.4, TypeScript 7.0.2
 
 [Architecture](docs/architecture.md), [design system](docs/design-system.md), [checkpoint checklist](docs/phase-1-checklist.md).
 
-Both servers bind to localhost, with controlled local CORS/Hosts and rejection of writes with foreign browser Origins. Keys never belong in frontend code or logs; `.env` is ignored. URL checks reject non-HTTP schemes, credentials, private/local/reserved literal addresses and unusual ports. Website Audit makes limited public requests with pinned DNS, redirect revalidation, robots.txt checks and TLS verification; URL import alone makes no requests. No prohibited scraping, scoring, AI, outreach, CSV export, cloud sync, publishing or deployment is implemented.
+Both servers bind to localhost, with controlled local CORS/Hosts and rejection of writes with foreign browser Origins. Keys never belong in frontend code or logs; `.env` is ignored. URL checks reject non-HTTP schemes, credentials, private/local/reserved literal addresses and unusual ports. Website Audit makes limited public requests with pinned DNS, redirect revalidation, robots.txt checks and TLS verification; URL import alone makes no requests. No prohibited scraping, automated sending, CSV export, cloud sync, publishing or deployment is implemented. Contact research and Gemini assistance require explicit consent; private notes and contact values are excluded from AI requests.
 
-**Stop for review here. Checkpoint 3B is implemented.** AI opportunity scoring, proposal generation and later checkpoints require separate approval.
+**Stop for review here. Checkpoint 4 is implemented with live Gemini verification pending.** Checkpoint 5 is not started.
 
 
 ## Website auditor — Checkpoint 3A
@@ -132,7 +132,7 @@ Reports retain bounded extracted signals and request evidence, not full HTML or 
 
 ## Efficient development verification
 
-From repository root, use `make test-discovery`, `make test-audits`, `make test-leads`, `make test-shell` or `make test-security` for the affected area. Use `make check` once at checkpoint completion for the full offline test suite and TypeScript/build checks. `npm run test:watch -- src/Audits.test.tsx` from frontend supports focused iteration. Failures and warnings remain visible with concise output.
+From repository root, use `make test-intelligence`, `make test-discovery`, `make test-audits`, `make test-leads`, `make test-shell` or `make test-security` for the affected area. Use `make check` once at checkpoint completion for the full offline test suite and TypeScript/build checks. `npm run test:watch -- src/Audits.test.tsx` from frontend supports focused iteration. Failures and warnings remain visible with concise output.
 
 The [test efficiency review](docs/testing-strategy.md) explains why all security/database/API/persistence tests were retained, the strengthened cancellation assertion, test selection and which historical browser runs overlap. Browser checks remain explicit; no live provider calls are made by the ordinary automated suite.
 
@@ -149,3 +149,18 @@ Read [provider selection, terms, ODbL obligations, configuration and limitations
 ### Diagnosing discovery failures
 
 Expand **Request diagnostics** on a new run for the actual query, stage, HTTP status and bounded provider remark. HTTP 200 can contain a timeout/memory/syntax error; it is not proof of throttling. Historical jobs lacking captured responses remain explicitly unknown. **Prepare 500 m nearby fallback** changes controls without an automatic provider call; review location/scope and respect cooldowns before starting. Large boundary-only searches are refused before POI requests. See [London failure investigation](docs/discovery-diagnostics-results.md).
+
+
+## Contact enrichment, identity, priority and proposals — Checkpoint 4
+
+Open a saved manual/CSV lead or **Saved Leads → Lead intelligence and advanced filters**, then select a private lead or saved discovery record. Confirm permitted access before **Enrich business contacts**. Confirm official website association separately; conflicting published name/domain/locality/coordinates still stop website-contact merging. Social profiles are linked for review, never fetched. Only published role/business emails are collected; staff addresses and guessed contacts are excluded. Each contact retains source, status, retrieval time and available licence/attribution. Missing data means unobserved in bounded sources, never proof of absence. Existing OSM records may lack contact tags until a new explicit discovery search.
+
+Research visits at most three permitted same-domain pages and eight requests including robots/redirects, within 75 seconds. It reuses identical completed checks for 24 hours, allows one active job, ten starts per rolling day, ten seconds between starts and a shared per-host audit/enrichment cooldown of at least 60 seconds. Robots restrictions, TLS/public DNS pinning, body limits and cross-domain redirect refusal remain. Optional Wikidata checks use only the existing business entity ID, verify name/type, retain CC0 attribution and treat website candidates as unverified. Brand IDs are never substituted.
+
+**Assess opportunity** computes versioned deterministic evidence priority: website opportunities 35, static audit/lab potential 25, official self-described independence 15, observed contacts 15 and supported skills 10. Unknown components remain unassessed; a missing website or provider error receives no invented failure score. Qualification requires a current matching identity and official association plus successful website evidence. Coverage is separate from priority, and neither is a sales prediction. Size/ownership are source self-descriptions or unknown, not inferred revenue or employee counts. Filters include category, segment, website state, contact availability, score and explicit major-chain inclusion.
+
+**Proposal Studio** supports email, WhatsApp, contact form, LinkedIn DM and Instagram DM drafts. Review identity/evidence first, choose the labelled local template or optional Gemini selection, edit subject/body, save locally and copy for manual review. Nothing is sent. Facts and offered services are allowlisted; proposals do not invent hiring intent, weaknesses or contact details. Business changes, superseding source checks and evidence older than 24 hours block new generation until verification/assessment is refreshed. Saved drafts remain editable historical records.
+
+For optional Gemini, set **GEMINI_API_KEY** in ignored root `.env`; optionally set **GEMINI_MODEL** (default `gemini-2.5-flash-lite`) and **GEMINI_DAILY_LIMIT** (default 10, range 1–100), then restart the backend. The official `google-genai` SDK sends only bounded public name/category and approved observation/service IDs to a fixed Google endpoint after explicit consent. Contact values, private notes, raw HTML and user draft edits stay local. Output selects approved IDs/wording variants; deterministic score/facts remain unchanged. No tools, automatic SDK retries or model fallback; one separately budgeted application retry is allowed for HTTP 500/503. HTTP 429 creates a one-hour local cooldown. Account quota/billing still applies. GET `/api/intelligence/usage` exposes actual request counts, token measurements when returned, and recent status; absence of measured tokens is explicit.
+
+Migrations **0005_intelligence** and **0006_ai_jobs** preserve existing lead/audit/discovery data and add local identities, enrichment/contact observations, assessments, drafts and asynchronous AI usage records. Interrupted jobs are marked on restart without automatic external calls. Deleting a business cascades its linked intelligence/drafts. Run one local backend worker. **Gemini is currently unconfigured and has not been verified live.**

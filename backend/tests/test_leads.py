@@ -10,7 +10,7 @@ def create(client, url='https://example.com', **fields):
 def test_crud_status_notes_metrics_and_persistence(client, database):
     empty = client.get('/api/dashboard').json()
     assert empty['leads_found'] == 0 and empty['recent'] == []
-    assert empty['high_priority'] is None and empty['drafts_ready'] is None
+    assert empty['high_priority'] == 0 and empty['drafts_ready'] == 0
     response = create(client, business_name='User supplied', category='Café', location='Delhi')
     assert response.status_code == 201
     lead = response.json()

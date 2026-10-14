@@ -211,3 +211,13 @@ dl dt { flex-shrink: 0; } dl dd { text-align: right; }
 /* Bounded provider evidence remains readable in narrow discovery cards. */
 .discovery-review .audit-evidence { overflow-wrap: anywhere; white-space: pre-wrap; }
 .discovery-review .helper { overflow-wrap: anywhere; }
+/* Checkpoint 4 uses the approved cream/coffee tokens and responsive shell. */
+.intelligence-card, .score-components, .contact-row { overflow-wrap: anywhere; }
+.score-components { display: grid; gap: 12px; margin: 18px 0; }
+.score-components > div, .contact-row { padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--soft); }
+.contacts-panel { margin-top: 20px; }
+.contact-row { display: grid; gap: 6px; margin: 10px 0; }
+.contact-row .badge { justify-self: start; }
+.contact-row small { color: var(--muted); }
+.settings-card input, .settings-card select { color: var(--text); }
+@media (max-width: 760px) { .score-components { grid-template-columns: 1fr; } }

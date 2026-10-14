@@ -1,6 +1,11 @@
-"""Local leads, permitted URL audits and attributed business discovery. No AI calls."""
+"""Local leads, permitted source research and explicitly requested AI assistance."""
 from typing import Literal
 from contextlib import asynccontextmanager
+from app.api.intelligence import router as intelligence_router
+from app.intelligence.enrichment import enrich
+from app.providers.gemini import select_context
+from app.intelligence.manager import EnrichmentManager
+from app.intelligence.ai_manager import AIManager
 from app.providers.diagnostics import configure_logging
 from app.discovery.manager import DiscoveryManager
 from app.api.discovery import router as discovery_router
@@ -29,14 +34,20 @@ async def lifespan(application):
     discovery = DiscoveryManager(getattr(application.state, 'audit_engine', engine), provider=getattr(application.state, 'discovery_provider', None))
     application.state.discovery_manager = discovery
     discovery.recover()
+    enrichment=EnrichmentManager(getattr(application.state,'audit_engine',engine),runner=getattr(application.state,'enrichment_runner',enrich))
+    application.state.enrichment_manager=enrichment;enrichment.recover()
+    ai=AIManager(getattr(application.state,'audit_engine',engine),provider=getattr(application.state,'gemini_provider',select_context))
+    application.state.ai_manager=ai;ai.recover()
     try:
         yield
     finally:
+        await ai.shutdown()
+        await enrichment.shutdown()
         await discovery.shutdown()
         await worker.shutdown()
 
 
-app = FastAPI(title='ClientScout AI', version='0.3.1', lifespan=lifespan)
+app = FastAPI(title='ClientScout AI', version='0.4.0', lifespan=lifespan)
 LOCAL_ORIGINS = [f'http://{host}:{port}' for host in ['127.0.0.1', 'localhost'] for port in [FRONTEND_PORT, FRONTEND_PORT + 1, API_PORT]]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', '[::1]'])
 app.add_middleware(
@@ -73,14 +84,16 @@ class HealthResponse(BaseModel):
 @app.get('/api/health', response_model=HealthResponse)
 def health(session: Session = Depends(get_session)):
     revision = session.scalar(text('SELECT version_num FROM alembic_version'))
-    if revision != '0004_discovery_diagnostics':
+    if revision != '0006_ai_jobs':
         raise HTTPException(503, 'Database migration required. Run alembic upgrade head from backend.')
     session.execute(text('SELECT id FROM leads LIMIT 1'))
     session.execute(text('SELECT id FROM audits LIMIT 1'))
     session.execute(text('SELECT id FROM discovered_businesses LIMIT 1'))
     session.execute(text('SELECT id FROM discovery_searches LIMIT 1'))
     session.execute(text('SELECT key FROM discovery_cache LIMIT 1'))
-    return HealthResponse(status='ok', service='clientscout-api', version='0.3.1', checkpoint=3, database='ready')
+    session.execute(text('SELECT id FROM business_identities LIMIT 1'))
+    session.execute(text('SELECT id FROM ai_usage LIMIT 1'))
+    return HealthResponse(status='ok', service='clientscout-api', version='0.4.0', checkpoint=4, database='ready')
 
 
 app.include_router(router)
@@ -88,3 +101,5 @@ app.include_router(router)
 app.include_router(audits_router)
 
 app.include_router(discovery_router)
+
+app.include_router(intelligence_router)

@@ -43,9 +43,20 @@
 - [x] Cancellation, retry, persistent history/cache/cooldowns and actionable failures.
 - [x] Existing lead CRUD/imports/audits/themes retained; no future features.
 - [x] Deterministic tests and focused Chrome/live provider verification.
-- [ ] User review before Checkpoint 4.
+- [x] User explicitly authorized resuming Checkpoint 4 from the local working tree.
+
+## Checkpoint 4 — ready for review; live Gemini pending
+
+- [x] Preserved and resumed interrupted implementation without reset or discarded work.
+- [x] Bounded permitted business contact enrichment with provenance and honest missing states.
+- [x] Name/domain/locality/coordinate identity checks and mismatch protection.
+- [x] Deterministic evidence priority, separate coverage, segmentation and advanced filters.
+- [x] Human-reviewed editable local drafts for five channels; no automatic sending.
+- [x] Backend-only Gemini structured selection, consent, budgets, redaction and error handling.
+- [x] Targeted regressions, full `make check`, focused installed Chrome verification.
+- [ ] Genuine Gemini API request: blocked by missing credentials; mocks are not live proof.
+- [ ] User review before Checkpoint 5.
 
 ## Remaining checkpoints — not started
 
-4. Backend-only Gemini, explainable scoring, personalized editable drafts, usage/error handling.
 5. Expanded full E2E, performance/accessibility/security review, CSV export, documentation.

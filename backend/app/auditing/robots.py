@@ -22,8 +22,9 @@ def redirect_target(current, location):
 
 
 class PoliteFetcher:
-    def __init__(self, fetcher):
+    def __init__(self, fetcher, allowed_hosts=None):
         self.fetcher = fetcher
+        self.allowed_hosts = allowed_hosts
         self.policies = {}
         self.last_request = {}
         self.evidence = []
@@ -38,7 +39,12 @@ class PoliteFetcher:
     def rate_key(url):
         return (urlsplit(url).hostname or '').removeprefix('www.')
 
+    def check_scope(self,url):
+        if self.allowed_hosts is not None and normalize_url(url)[1] not in self.allowed_hosts:
+            raise AuditFailure('Cross-domain enrichment redirect blocked; verify identity manually.', 'identity_mismatch')
+
     async def robots(self, url):
+        self.check_scope(url)
         origin = self.origin(url)
         if origin in self.policies:
             return self.policies[origin]
@@ -46,6 +52,7 @@ class PoliteFetcher:
         for hop in range(6):
             elapsed = time.monotonic() - self.last_request.get(self.rate_key(current), 0)
             if elapsed < 2: await asyncio.sleep(2 - elapsed)
+            self.check_scope(current)
             response = await self.fetcher.get(current, max_bytes=512 * 1024)
             self.last_request[self.rate_key(current)] = time.monotonic()
             self.evidence.append({'kind': 'robots', 'url': current, 'status': response.status, 'fetched_at': response.fetched_at, 'connections': response.connections, 'retry_after': response.headers.get('retry-after')})
@@ -86,6 +93,7 @@ class PoliteFetcher:
         current = url
         seen = set()
         for hop in range(6):
+            self.check_scope(current)
             if current in seen:
                 raise AuditFailure('Website redirect loop detected.', 'redirect_error')
             seen.add(current)

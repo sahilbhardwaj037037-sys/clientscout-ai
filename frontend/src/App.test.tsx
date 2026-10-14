@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { discoveryFixture } from './fixtures/discovery'
 
-const health = { status: 'ok', service: 'clientscout-api', version: '0.3.1', checkpoint: 3, database: 'ready' }
+const health = { status: 'ok', service: 'clientscout-api', version: '0.4.0', checkpoint: 4, database: 'ready' }
 function mount(path = '/') { return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>) }
 beforeEach(() => { vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => ({ ok: true, json: async () => discoveryFixture(String(url)) ?? (String(url).endsWith('/health') ? health : String(url).endsWith('/audits/config') ? { pagespeed_enabled: false, pagespeed_daily_limit: 10, max_active: 2, hostname_cooldown_seconds: 60, total_timeout_seconds: 100 } : String(url).includes('/audits?') ? { items: [], total: 0, limit: 20, offset: 0 } : String(url).includes('/leads?') ? { items: [], total: 0, limit: 20, offset: 0 } : { leads_found: 0, by_status: { new: 0, shortlisted: 0, contacted: 0, won: 0, archived: 0 }, high_priority: null, drafts_ready: null, recent: [] }) }))) })
 
@@ -15,8 +15,8 @@ describe('workspace foundation', () => {
     expect(screen.getByRole('heading', { name: 'Find your next client.' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Start search/ })).toBeDisabled()
     expect(await screen.findByText('Saved in your local database')).toBeInTheDocument()
-    expect(screen.getByText('Scoring arrives in Checkpoint 4')).toBeInTheDocument()
-    expect(screen.getByText('Drafts arrive in Checkpoint 4')).toBeInTheDocument()
+    expect(screen.getByText('Qualified assessments scoring 70 or more')).toBeInTheDocument()
+    expect(screen.getByText('Saved drafts awaiting your review')).toBeInTheDocument()
     expect(await screen.findByText('Backend connected')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith('/api/health', expect.objectContaining({ cache: 'no-store', signal: expect.any(AbortSignal) }))
   })

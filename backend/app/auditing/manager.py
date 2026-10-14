@@ -7,6 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from app.auditing.runner import run_audit
 from app.core.settings import PAGESPEED_API_KEY, PAGESPEED_DAILY_LIMIT, PAGESPEED_ENABLED
+from app.models.intelligence import Enrichment
 from app.models.audit import Audit
 from app.models.lead import Lead, now
 from app.schemas.audit import AuditRead
@@ -60,6 +61,9 @@ class AuditManager:
                 raise HTTPException(429, 'Two audits are already active. Wait or cancel one before starting another.', headers={'Retry-After': '10'})
             with Session(self.engine) as session:
                 timestamp = now()
+                enrichment=session.scalar(select(Enrichment).where(Enrichment.hostname==hostname).order_by(Enrichment.id.desc()))
+                if enrichment and utc(enrichment.next_allowed_at)>timestamp:
+                    raise HTTPException(429,'This website has an enrichment cooldown; retry after '+utc(enrichment.next_allowed_at).isoformat())
                 latest = session.scalar(select(Audit).where(Audit.hostname == hostname).order_by(Audit.created_at.desc()).limit(1))
                 if latest and utc(latest.next_allowed_at) > timestamp:
                     seconds = max(1, int((utc(latest.next_allowed_at) - timestamp).total_seconds()) + 1)

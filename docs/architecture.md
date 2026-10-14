@@ -1,4 +1,4 @@
-# Architecture — Checkpoint 3B
+# Architecture — Checkpoint 4
 
 Browser → React/TypeScript on local Vite → same-origin `/api/...` → configured Vite proxy → local FastAPI → SQLAlchemy → SQLite.
 
@@ -20,7 +20,7 @@ The reported port 10180 was not present in inspected source, root/frontend/backe
 
 Accepted CSV rows commit in one transaction. Nested savepoints isolate unique-key conflicts; invalid rows are skipped explicitly. A file-level error saves nothing. Direct duplicate creates return 409 and existing ID; conflicting updates roll back all fields. Database errors return a bounded 503 message without disclosing SQL or local secrets. Lists paginate (limit ≤100) and filter; escaped search terms cannot act as SQL LIKE wildcards. All queries use SQLAlchemy bindings.
 
-Health verifies migration revision and queries the lead table; database failure never yields an OK response. Dashboard total, per-status counts and recent leads are read in a database transaction. Priority and draft totals are null because their data sources are unimplemented.
+Health verifies migration revision and queries the lead table; database failure never yields an OK response. Dashboard total, per-status counts and recent leads are read in a database transaction. Priority totals count current qualified latest assessments scoring at least 70; draft totals count saved drafts.
 
 ## Frontend
 
@@ -35,7 +35,7 @@ No lead data is stored in localStorage; only theme preference is. Browser refres
 - Imported files are ≤1 MiB/500 non-empty rows, validated UTF-8; only known data columns allowed. No formulas are executed or files retained. CSV export is not implemented.
 - Keys/environment/database/caches/build artifacts are ignored; no API-key field exists in the frontend.
 - Stored URL checks block dangerous schemes/credentials/local literals. Explicit audits use the public pinned transport and bounded redirect/body/time protections described below; imports remain network-free.
-- No prohibited Google Maps scraping, opportunity scoring, AI, outreach, background schedules or deployment.
+- No prohibited Google Maps scraping, automatic outreach sending, background schedules or deployment. Explicit source research and optional constrained AI assistance are described below.
 
 SQLite persistence is intended for a single local user. Imports report per-row results immediately and preserve per-lead source metadata; an import run history table is not implemented. Database backups require stopping the backend first.
 
@@ -77,3 +77,16 @@ Endpoints: GET `/api/audits/config`; POST `/api/audits`; GET `/api/audits?lead_i
 Migration **0004_discovery_diagnostics** adds a nullable JSON column to existing search jobs; old jobs read as an empty diagnostic list, preserving unknown original errors. The progress callback optionally captures each completed/failed request's evidence before provider parsing, so failed JSON remarks survive. Cancellation/recovery/SQL sessions and previous provider budgets remain unchanged. Cache keys use a new namespace so the obsolete literal-qualified-place resolver is not reused; historic reports and licensed saved source data remain readable.
 
 The existing search card adds scope and nearby-radius controls plus escaped expandable evidence, with a preparation-only 500 m fallback action. Native validation, backend guards and existing manual/CSV/audit flows remain. No large city query, automatic partial-results recovery, third-party geocoder or new discovery provider was added.
+
+
+## Business intelligence and reviewed drafts
+
+Migrations 0005/0006 add business identities tied to exactly one private lead or saved discovery record, enrichment jobs/contact observations, immutable evidence assessments, editable drafts and asynchronous AI usage. Foreign keys cascade business-linked intelligence; usage retains bounded request IDs/statuses rather than prompts. Lifespan owns all four managers and marks interrupted work without automatic provider resumption. Health expects 0006_ai_jobs.
+
+`intelligence/contacts.py`, `identity.py` and `enrichment.py` extract only published business methods after bounded source permission and identity checks. Enrichment reuses SafeFetcher and same-domain PoliteFetcher, including robots checks, public pinned sockets/TLS, body/deadline limits and an eight-request budget. Same-domain contact/about pages inherit homepage identity only when no contradictory organization evidence exists. OSM tags remain attributed unverified observations; optional allowlisted Wikidata organization lookups retain CC0 provenance.
+
+`scoring.py` stores deterministic evidence-v1 weighted components, confidence/coverage, source observations, identity, limitations and source-described segment. `freshness.py` checks the actual current business snapshot and latest source job before draft/AI dispatch and again before AI output persistence. Expired sources or business changes cannot extend qualification merely by refreshing the assessment timestamp. Dashboard priority excludes stale assessments. Historical assessments/drafts remain readable with their original evidence/time.
+
+`providers/gemini.py` uses the official SDK at the fixed Google endpoint with explicit model, verified TLS, no environment proxies, no tools, one SDK attempt and a structured selection schema. Only public name/category plus approved observation/service IDs are sent. Allowlist validation prevents model-generated facts from entering drafts or changing scores. Application AIManager reserves every attempt, permits at most one 500/503 retry, enforces active/global/daily limits and a 429 cooldown, records actual token counts when available and sanitizes errors. It does not switch models or silently fall back to templates. Live operation remains unverified without credentials.
+
+The `/api/intelligence` router exposes config, target lists/detail, enrichment start/read/cancel, assessments/filtering, AI jobs, usage and draft generation/read/edit. React intelligence and Proposal Studio screens preserve the existing shell/themes, render source provenance as escaped text, require permission/consent/review, validate API responses and poll only selected active jobs. Local templates and Gemini-assisted selections have distinct labels. No email/DM/form sender exists.

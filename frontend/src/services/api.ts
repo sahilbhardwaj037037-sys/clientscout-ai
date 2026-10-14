@@ -1,3 +1,4 @@
+import { validIntelligenceResponse } from './intelligence'
 import { validDiscoveryResponse } from './discovery'
 import { validAuditResponse } from './audits'
 export const API_TARGET = __API_TARGET__
@@ -10,7 +11,7 @@ export type Lead = {
 }
 export type LeadInput = Pick<Lead, 'business_name' | 'website_url' | 'category' | 'location' | 'status' | 'notes'>
 export type LeadList = { items: Lead[]; total: number; limit: number; offset: number }
-export type Dashboard = { leads_found: number; discovered_businesses?: number; by_status: Record<LeadStatus, number>; high_priority: null; drafts_ready: null; recent: Lead[] }
+export type Dashboard = { leads_found: number; discovered_businesses?: number; by_status: Record<LeadStatus, number>; high_priority: number | null; drafts_ready: number | null; recent: Lead[] }
 export type ImportReport = { filename: string; total: number; created: number; duplicates: number; invalid: number;
   rows: { line: number; outcome: 'created' | 'duplicate' | 'invalid'; message?: string; lead_id?: number }[] }
 export class ApiError extends Error {
@@ -28,6 +29,7 @@ function validLead(value: unknown): boolean {
     && ['created_at', 'updated_at'].every(key => typeof value[key] === 'string' && !Number.isNaN(Date.parse(String(value[key]))))
 }
 function validateResponse(path: string, value: unknown): boolean {
+  if (path.startsWith('/intelligence')) return validIntelligenceResponse(path, value)
   if (path.startsWith('/discovery')) return validDiscoveryResponse(path, value)
   if (path.startsWith('/audits')) return validAuditResponse(path, value)
   if (path.startsWith('/leads?') || path === '/leads' && object(value) && 'items' in value) {
@@ -38,7 +40,7 @@ function validateResponse(path: string, value: unknown): boolean {
     return object(value) && count(value.leads_found) && (value.discovered_businesses === undefined || count(value.discovered_businesses)) && object(value.by_status)
       && statuses.every(status => count((value.by_status as Record<string, unknown>)[status]))
       && Object.values(value.by_status).reduce<number>((sum, entry) => sum + Number(entry), 0) === value.leads_found
-      && value.high_priority === null && value.drafts_ready === null && Array.isArray(value.recent) && value.recent.every(validLead)
+      && (value.high_priority === null || count(value.high_priority)) && (value.drafts_ready === null || count(value.drafts_ready)) && Array.isArray(value.recent) && value.recent.every(validLead)
   }
   if (path === '/imports/csv') {
     return object(value) && typeof value.filename === 'string' && count(value.total) && count(value.created) && count(value.duplicates) && count(value.invalid)

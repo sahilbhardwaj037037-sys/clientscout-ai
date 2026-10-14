@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlsplit
 from app.auditing.network import AuditFailure, SafeFetcher
 from app.services.urls import normalize_url
 from app.providers.locations import parse_location, location_query, valid_bounds, boundary_is_small, PLACE_TYPES
+from app.intelligence.contacts import role_email
 from app.providers.diagnostics import trace, failure_kind
 
 ATTRIBUTION = '© OpenStreetMap contributors'
@@ -136,7 +137,7 @@ def parse_businesses(document, query, center, cap, scope='nearby', boundary=None
             'latitude': latitude, 'longitude': longitude, 'coordinate_kind': 'OSM node' if kind == 'node' else 'OSM object bounding-box center',
             'fetched_at': fetched_at, 'source_timestamp': text(document.get('osm3s', {}).get('timestamp_osm_base'), 100) if isinstance(document.get('osm3s'), dict) else None,
             'attribution': ATTRIBUTION, 'licence': 'ODbL-1.0', 'licence_url': LICENCE_URL, 'unverified': True,
-            'warnings': [warning] if warning else []})
+            'warnings': [warning] if warning else [], 'business_tags': {key: text(tags.get(key), 500) for key in ['brand','brand:wikidata','operator','operator:type','wikidata','email','contact:email','phone','contact:phone','contact:whatsapp','contact:facebook','contact:instagram','contact:linkedin','addr:city','addr:postcode'] if text(tags.get(key),500) and (key not in {'email','contact:email'} or role_email(text(tags.get(key),500),name or ''))}})
         if len(items) == query.limit: break
     return {'items': items, 'invalid_records': invalid, 'duplicates_removed': duplicates, 'candidate_cap': cap,
         'sample_may_be_truncated': len(document['elements']) >= cap, 'center': center, 'radius_metres': query.radius_metres if scope == 'nearby' else None, 'search_scope': scope, 'boundary': boundary if scope == 'boundary' else None,

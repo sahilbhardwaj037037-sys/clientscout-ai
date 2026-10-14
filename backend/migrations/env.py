@@ -1,6 +1,7 @@
 from alembic import context
 from app.database.session import Base, engine
 from app.models.discovery import DiscoverySearch, DiscoveryCache, DiscoveredBusiness  # noqa: F401
+from app.models.intelligence import BusinessIdentity, Enrichment, ContactMethod, Assessment, OutreachDraft, AIUsage  # noqa: F401
 from app.models.audit import Audit  # noqa: F401
 from app.models.lead import Lead  # noqa: F401
 

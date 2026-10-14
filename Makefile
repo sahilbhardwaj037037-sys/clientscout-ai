@@ -1,5 +1,5 @@
 # Run from the repository root. All automated tests use isolated/mocked data.
-.PHONY: test test-backend test-frontend test-audits test-leads test-shell test-security test-discovery check
+.PHONY: test test-backend test-frontend test-audits test-leads test-shell test-security test-discovery test-intelligence check
 
 test: test-backend test-frontend
 
@@ -21,6 +21,10 @@ test-leads:
 test-discovery:
 	@cd backend && .venv/bin/python -m pytest tests/test_discovery.py tests/test_discovery_resolution.py
 	@cd frontend && npm test -- src/Discovery.test.tsx
+
+test-intelligence:
+	@cd backend && .venv/bin/python -m pytest tests/test_intelligence.py tests/test_migrations.py
+	@cd frontend && npm test -- src/Intelligence.test.tsx
 
 test-shell:
 	@cd backend && .venv/bin/python -m pytest tests/test_health.py

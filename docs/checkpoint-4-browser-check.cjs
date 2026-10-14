@@ -1,0 +1,81 @@
+/* Focused Chrome QA. Requires the isolated fixture-source QA server, never live Gemini. */
+const { chromium } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const base = process.env.CLIENTSCOUT_QA_FRONTEND || 'http://127.0.0.1:5175';
+if (process.env.CLIENTSCOUT_QA_FIXTURE_SOURCES !== 'true') throw new Error('Explicit isolated fixture-source QA opt-in required.');
+(async () => {
+  const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  async function json(path, options) {
+    const response = options ? await page.request.post(base + '/api' + path, options) : await page.request.get(base + '/api' + path);
+    assert(response.ok(), `${path}: ${response.status()}`); return response.json();
+  }
+  async function noOverflow() { assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow'); }
+  try {
+    await page.goto(base + '/');
+    await page.getByText('Backend connected', { exact: true }).waitFor();
+    assert.equal((await json('/health')).checkpoint, 4);
+    assert.equal((await json('/intelligence/config')).gemini_configured, false);
+    const lead = await json('/leads', { data: { business_name: 'Checkpoint 4 QA Cafe', website_url: 'https://example.com/', notes: 'PRIVATE QA NOTE — MUST STAY LOCAL', category: 'cafe' } });
+    await page.goto(base + '/saved-leads/intelligence/lead/' + lead.id);
+    const enrich = page.getByRole('button', { name: 'Enrich business contacts', exact: true });
+    await enrich.waitFor(); assert(await enrich.isDisabled());
+    await page.getByRole('checkbox', { name: /I have permission/ }).check();
+    await page.getByRole('checkbox', { name: /I confirm that/ }).check();
+    await enrich.click();
+    await page.getByText('Source checks finished · complete', { exact: true }).waitFor();
+    await page.getByText('info@example.com', { exact: true }).waitFor();
+    assert.equal(await page.getByText('john.smith@example.com', { exact: true }).count(), 0);
+    await page.getByRole('button', { name: 'Assess opportunity', exact: true }).click();
+    await page.getByRole('heading', { name: 'Opportunity assessment' }).waitFor();
+    const target = await json('/intelligence/targets/lead/' + lead.id);
+    assert.equal(target.assessment.qualification, 'qualified');
+    assert(target.assessment.score > 0); assert.equal(target.assessment.segment, 'independent_small');
+    assert(!JSON.stringify(target.assessment).includes('PRIVATE QA NOTE'));
+    assert(await page.getByRole('button', { name: /Gemini context assistance/ }).isDisabled());
+    await noOverflow();
+    await page.screenshot({ path: '/private/tmp/clientscout-qa/checkpoint-4-intelligence-desktop.png', fullPage: true });
+    await page.getByRole('link', { name: 'Open Proposal Studio', exact: true }).click();
+    const generate = page.getByRole('button', { name: 'Generate draft', exact: true });
+    await generate.waitFor(); assert(await generate.isDisabled());
+    await page.getByRole('checkbox', { name: /I reviewed the identity/ }).check();
+    await generate.click();
+    const editor = page.getByLabel('Draft text'); await editor.waitFor();
+    assert((await editor.inputValue()).includes('Checkpoint 4 QA Cafe'));
+    await page.getByText('Local evidence template; no AI request', { exact: true }).waitFor();
+    await editor.fill('Hello Checkpoint 4 QA Cafe team,\n\nHuman reviewed QA proposal.');
+    await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+    await page.getByText('Draft saved locally. Nothing was sent.', { exact: true }).waitFor();
+    const history = await json('/intelligence/drafts'); assert.equal(history.total, 1);
+    const saved = history.items[0]; assert(saved.saved && saved.edited && saved.generator === 'template');
+    assert.equal(saved.body, await editor.inputValue());
+    await page.reload();
+    await page.getByRole('button', { name: new RegExp('Website support for Checkpoint 4 QA Cafe · #' + saved.id) }).click();
+    assert.equal(await editor.inputValue(), saved.body);
+    await noOverflow();
+    await page.goto(base + '/settings');
+    await page.getByRole('button', { name: 'Dark', exact: true }).click();
+    await page.setViewportSize({ width: 320, height: 740 });
+    await page.goto(base + '/proposal-studio?assessment=' + target.assessment.id);
+    await page.getByRole('button', { name: new RegExp('Website support for Checkpoint 4 QA Cafe · #' + saved.id) }).click();
+    assert.equal(await editor.inputValue(), saved.body); await noOverflow();
+    await page.screenshot({ path: '/private/tmp/clientscout-qa/checkpoint-4-proposal-mobile.png', fullPage: true });
+    await page.goto(base + '/saved-leads/intelligence');
+    await page.getByLabel('Business size / segment').selectOption('independent_small');
+    await page.getByLabel('Contact availability').selectOption('yes');
+    await page.getByLabel('Minimum priority score').fill(String(target.assessment.score));
+    await page.getByRole('button', { name: 'Apply intelligence filters' }).click();
+    await page.getByText('1 matching assessments', { exact: true }).waitFor(); await noOverflow();
+    await page.goto(base + '/saved-leads/intelligence/lead/' + lead.id);
+    await page.getByText('info@example.com', { exact: true }).waitFor(); await noOverflow();
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    await page.goto(base + '/');
+    const dashboard = await json('/dashboard'); assert.equal(dashboard.drafts_ready, 1);
+    assert.equal(dashboard.high_priority, target.assessment.score >= 70 ? 1 : 0);
+    assert.deepEqual(errors, []);
+    fs.writeFileSync('/private/tmp/clientscout-qa/checkpoint-4-browser-result.json', JSON.stringify({ fixture_sources: true, gemini_live_verified: false, lead_id: lead.id, assessment_id: target.assessment.id, draft_id: saved.id, score: target.assessment.score, dashboard, page_errors: errors }, null, 2));
+    console.log('PASS Chrome: real migrated QA API; fixture-source enrichment/identity/score; permission/review gates; edited draft save/reload; advanced filters; desktop light/mobile dark; dashboard; zero page errors. Gemini missing key, no live call.');
+  } finally { await browser.close(); }
+})().catch(e => { console.error(e); process.exitCode = 1; });

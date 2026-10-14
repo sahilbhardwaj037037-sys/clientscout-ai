@@ -6,6 +6,7 @@ export function useResource<T>(path: string) {
   const [state, setState] = useState<{ data?: T; loading: boolean; error?: string }>({ loading: true })
   useEffect(() => {
     const controller = new AbortController()
+    if (!path) { setState({ loading: false }); return () => controller.abort() }
     setState({ loading: true })
     request<T>(path, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted) setState({ data, loading: false })

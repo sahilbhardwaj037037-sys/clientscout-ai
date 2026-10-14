@@ -2,7 +2,7 @@ def test_health(client):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {
-        "status": "ok", "service": "clientscout-api", "version": "0.3.1", "checkpoint": 3, "database": "ready"
+        "status": "ok", "service": "clientscout-api", "version": "0.4.0", "checkpoint": 4, "database": "ready"
     }
 
 

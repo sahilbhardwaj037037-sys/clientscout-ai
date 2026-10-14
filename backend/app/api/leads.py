@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database.session import get_session
+from app.models.intelligence import Assessment,OutreachDraft
 from app.models.discovery import DiscoveredBusiness
 from app.models.lead import Lead
 from app.schemas.lead import LeadCreate, LeadPatch, LeadRead, LeadStatus
@@ -137,9 +138,11 @@ async def import_csv(request: Request, session: DB):
 
 @router.get('/dashboard')
 def dashboard(session: DB):
+    from app.intelligence.freshness import assessment_current
     counts = dict(session.execute(select(Lead.status, func.count()).group_by(Lead.status)).all())
     recent = session.scalars(select(Lead).order_by(Lead.id.desc()).limit(5)).all()
+    priorities=session.scalars(select(Assessment).where(Assessment.id.in_(select(func.max(Assessment.id)).group_by(Assessment.identity_id)),Assessment.score>=70,Assessment.qualification=='qualified')).all()
     return {'leads_found': sum(counts.values()), 'discovered_businesses': session.scalar(select(func.count()).select_from(DiscoveredBusiness)),
             'by_status': {status: counts.get(status, 0) for status in ['new', 'shortlisted', 'contacted', 'won', 'archived']},
-            'high_priority': None, 'drafts_ready': None,
+            'high_priority': sum(assessment_current(session,a) for a in priorities), 'drafts_ready': session.scalar(select(func.count()).select_from(OutreachDraft).where(OutreachDraft.saved.is_(True))),
             'recent': [LeadRead.model_validate(lead) for lead in recent]}

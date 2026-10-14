@@ -37,3 +37,11 @@ if _discovery_flag not in {'true', 'false'}:
     raise ValueError('DISCOVERY_ENABLED must be true or false.')
 DISCOVERY_ENABLED = _discovery_flag == 'true'
 OVERPASS_API_URL = os.environ.get('OVERPASS_API_URL') or 'https://overpass-api.de/api/interpreter'
+
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY','').strip()
+GEMINI_MODEL = os.environ.get('GEMINI_MODEL') or 'gemini-2.5-flash-lite'
+import re
+if not re.fullmatch(r'gemini-[a-z0-9.-]{1,70}',GEMINI_MODEL):
+    raise ValueError('GEMINI_MODEL must be an explicit Gemini model identifier, not a URL.')
+GEMINI_DAILY_LIMIT = int(os.environ.get('GEMINI_DAILY_LIMIT') or 10)
+if not 1 <= GEMINI_DAILY_LIMIT <= 100:raise ValueError('GEMINI_DAILY_LIMIT must be 1..100.')
