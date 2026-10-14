@@ -96,3 +96,36 @@ async def test_concatenated_gzip_is_not_silently_analyzed_as_partial_html():
         async def connect_tcp(self, *args, **kwargs): return httpcore.AsyncMockStream([raw])
     async with SafeFetcher(PublicNetworkBackend(resolve, Delegate())) as fetcher:
         with pytest.raises(AuditFailure, match='no partial HTML'): await fetcher.get('http://example.com/', max_bytes=200)
+
+@pytest.mark.anyio
+async def test_provider_post_uses_pinned_tls_form_body_and_does_not_follow_redirects():
+    connections, tls, writes = [], [], []
+    class Stream(httpcore.AsyncMockStream):
+        async def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            tls.append((server_hostname, ssl_context.verify_mode)); return self
+        async def write(self, buffer, timeout=None):
+            writes.append(buffer); await super().write(buffer, timeout)
+    class Delegate:
+        async def connect_tcp(self, host, port, **kwargs):
+            connections.append((host, port))
+            return Stream([b'HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1/\r\nContent-Length: 0\r\n\r\n'])
+    async def resolve(host, port): return ['93.184.216.34']
+    async with SafeFetcher(PublicNetworkBackend(resolve, Delegate())) as fetcher:
+        response = await fetcher.post('https://example.com/api/interpreter', content=b'data=bounded', user_agent='ClientScout-test')
+    request = b''.join(writes).lower()
+    assert response.status == 302 and connections == [('93.184.216.34',443)] and tls == [('example.com',ssl.CERT_REQUIRED)]
+    assert b'post /api/interpreter' in request and b'host: example.com' in request and b'application/x-www-form-urlencoded' in request and b'data=bounded' in request
+
+@pytest.mark.anyio
+async def test_provider_post_retains_dns_body_and_timeout_protections():
+    async def mixed(host,port): return ['93.184.216.34','10.0.0.1']
+    async with SafeFetcher(PublicNetworkBackend(mixed)) as fetcher:
+        with pytest.raises(AuditFailure,match='non-public'): await fetcher.post('https://example.com/',content=b'data=x')
+    async def slow(host,port): await asyncio.sleep(5); return ['93.184.216.34']
+    async with SafeFetcher(PublicNetworkBackend(slow)) as fetcher:
+        with pytest.raises(AuditFailure,match='timed out'): await fetcher.post('https://example.com/',content=b'data=x',timeout=.01)
+    async def public(host,port): return ['93.184.216.34']
+    class Delegate:
+        async def connect_tcp(self,*args,**kw): return httpcore.AsyncMockStream([b'HTTP/1.1 200 OK\r\nContent-Length: 99\r\n\r\n'])
+    async with SafeFetcher(PublicNetworkBackend(public,Delegate())) as fetcher:
+        with pytest.raises(AuditFailure,match='body size'): await fetcher.post('https://example.com/',content=b'data=x',max_bytes=10)

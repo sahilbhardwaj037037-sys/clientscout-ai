@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Bookmark, ArrowRight } from 'lucide-react'
+import { SavedDiscoveries } from '../components/Discovery'
 import { LeadForm, statusLabel } from '../components/LeadForm'
 import { ResourceState } from '../components/ResourceState'
 import { useResource } from '../hooks/useResource'
@@ -24,7 +25,7 @@ export function SavedLeads() {
     <form className="lead-filters" onSubmit={apply}><label>Search leads<input value={search} maxLength={200} onChange={event => setSearch(event.target.value)} placeholder="Name, website, category or location" /></label><label>Filter by status<select aria-label="Filter by status" value={status} onChange={event => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map(value => <option value={value} key={value}>{statusLabel(value)}</option>)}</select></label><button className="secondary-button" type="submit">Apply filters</button><button className="text-link" type="button" onClick={() => { setSearch(''); setStatus(''); setFilter({ q: '', status: '' }); setOffset(0); resource.refresh() }}>Reset</button></form>
     <ResourceState {...resource} retry={resource.refresh} />
     {resource.data && (resource.data.items.length ? <><LeadRows leads={resource.data.items} /><div className="pagination"><button className="secondary-button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))}>Previous</button><span>{offset + 1}–{offset + resource.data.items.length} of {resource.data.total}</span><button className="secondary-button" disabled={offset + 20 >= resource.data.total} onClick={() => setOffset(offset + 20)}>Next</button></div></> : <div className="empty-state"><span className="empty-icon"><Bookmark size={30} /></span><h3>{filter.q || filter.status || offset ? 'No matching leads.' : 'Your shortlist starts here.'}</h3><p>{filter.q || filter.status || offset ? 'Try different filters or reset your search.' : 'Add a website URL or import your CSV to build your local collection.'}</p><Link className="secondary-button" to="/find-leads">Add your first lead</Link></div>)}
-  </section><p className="privacy-note">Lead details are user-supplied and have not been verified or audited.</p></>
+  </section><SavedDiscoveries /><p className="privacy-note">Lead details are user-supplied and have not been verified or audited.</p></>
 }
 
 export function LeadDetail() {

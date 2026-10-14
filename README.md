@@ -2,7 +2,7 @@
 
 Your Personal Freelance Intelligence Workspace.
 
-**Checkpoint 3A ready for review.** The approved React shell, compass mark, navigation and cream/coffee themes are preserved. Leads now persist locally in SQLite: add website URLs, import CSV, edit details/statuses/notes, search/filter/page the collection and delete with confirmation. Dashboard totals, status counts and recent leads come from the database. High Priority and Drafts Ready remain unavailable until Checkpoint 4; no scores or drafts are fabricated.
+**Checkpoint 3B ready for review.** The approved React shell, compass mark, navigation and cream/coffee themes are preserved. Leads now persist locally in SQLite: add website URLs, import CSV, edit details/statuses/notes, search/filter/page the collection and delete with confirmation. Dashboard totals, status counts and recent leads come from the database. High Priority and Drafts Ready remain unavailable until Checkpoint 4; no scores or drafts are fabricated.
 
 ## Install
 
@@ -97,9 +97,9 @@ Frontend remains React 19.3.0, React Router 7.18.4, Vite 8.3.4, TypeScript 7.0.2
 
 [Architecture](docs/architecture.md), [design system](docs/design-system.md), [checkpoint checklist](docs/phase-1-checklist.md).
 
-Both servers bind to localhost, with controlled local CORS/Hosts and rejection of writes with foreign browser Origins. Keys never belong in frontend code or logs; `.env` is ignored. URL checks reject non-HTTP schemes, credentials, private/local/reserved literal addresses and unusual ports. Website Audit makes limited public requests with pinned DNS, redirect revalidation, robots.txt checks and TLS verification; URL import alone makes no requests. No discovery scraping, scoring, AI, outreach, CSV export, cloud sync, publishing or deployment is implemented.
+Both servers bind to localhost, with controlled local CORS/Hosts and rejection of writes with foreign browser Origins. Keys never belong in frontend code or logs; `.env` is ignored. URL checks reject non-HTTP schemes, credentials, private/local/reserved literal addresses and unusual ports. Website Audit makes limited public requests with pinned DNS, redirect revalidation, robots.txt checks and TLS verification; URL import alone makes no requests. No prohibited scraping, scoring, AI, outreach, CSV export, cloud sync, publishing or deployment is implemented.
 
-**Stop for review here. Checkpoint 3A only is implemented.** Business discovery, AI opportunity scoring and proposal generation remain unimplemented and require separate approval.
+**Stop for review here. Checkpoint 3B is implemented.** AI opportunity scoring, proposal generation and later checkpoints require separate approval.
 
 
 ## Website auditor — Checkpoint 3A
@@ -132,6 +132,16 @@ Reports retain bounded extracted signals and request evidence, not full HTML or 
 
 ## Efficient development verification
 
-From repository root, use `make test-audits`, `make test-leads`, `make test-shell` or `make test-security` for the affected area. Use `make check` once at checkpoint completion for the full offline test suite and TypeScript/build checks. `npm run test:watch -- src/Audits.test.tsx` from frontend supports focused iteration. Failures and warnings remain visible with concise output.
+From repository root, use `make test-discovery`, `make test-audits`, `make test-leads`, `make test-shell` or `make test-security` for the affected area. Use `make check` once at checkpoint completion for the full offline test suite and TypeScript/build checks. `npm run test:watch -- src/Audits.test.tsx` from frontend supports focused iteration. Failures and warnings remain visible with concise output.
 
 The [test efficiency review](docs/testing-strategy.md) explains why all security/database/API/persistence tests were retained, the strengthened cancellation assertion, test selection and which historical browser runs overlap. Browser checks remain explicit; no live provider calls are made by the ordinary automated suite.
+
+## Business discovery — Checkpoint 3B
+
+Find Leads offers OpenStreetMap through Overpass, location/coordinates, business category/name keyword, 1–50 results (default 10), and optional website-tag filter. Each user-triggered search samples **within 2 km** of a mapped place center or coordinates; it is not a country/city directory. Ambiguous place names require coordinates. Coverage and business details are unverified. Missing website tags never become invented URLs.
+
+Review returned records, select businesses and acknowledge ODbL before saving. Saved Leads displays a separate attributed source collection, including businesses without websites. Existing manual/CSV lead CRUD, statuses, notes and website-required schema remain intact. Dashboard shows the actual saved discovery count separately. Progress, cancellation, errors, manual retry and persisted history use real backend job state.
+
+No API key is needed. Apply `alembic upgrade head` for **0003_discovery**. Optional backend-only `.env`: `DISCOVERY_ENABLED=false` disables new searches; `OVERPASS_API_URL` overrides the default public HTTPS endpoint. Shared public Overpass has no SLA. One active job, 30-second start spacing, 20 starts/24h, 24-hour cache, body/time caps, bounded backoff and pinned public-IP/TLS transport constrain requests. Restart the backend after configuration changes.
+
+Read [provider selection, terms, ODbL obligations, configuration and limitations](docs/discovery-provider.md) before sharing source-derived data or changing providers. Source views retain attribution/license links. No database/export/private notes are committed to GitHub. See [Checkpoint 3B verification and Git integration](docs/checkpoint-3b-results.md).

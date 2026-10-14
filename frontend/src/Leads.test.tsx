@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { LeadForm } from './components/LeadForm'
 import { CsvImport } from './components/CsvImport'
 import { Overview } from './pages/Workspace'
+import { discoveryFixture } from './fixtures/discovery'
 import { SavedLeads } from './pages/Leads'
 
 const lead = { id: 42, business_name: 'User lead', website_url: 'https://example.com/', category: '', location: '', notes: '', status: 'new', source: 'manual', source_filename: null, original_url: 'example.com', created_at: '2026-10-14T00:00:00Z', updated_at: '2026-10-14T00:00:00Z' }
@@ -58,7 +59,7 @@ it('uploads actual CSV content and displays row outcomes', async () => {
 })
 
 it('does not invent metrics when database requests fail', async () => {
-  vi.mocked(fetch).mockRejectedValue(new Error('Offline'))
+  vi.mocked(fetch).mockImplementation(async url => { const value = discoveryFixture(String(url)); if (value) return { ok: true, status: 200, json: async () => value } as Response; throw new Error('Offline') })
   mount(<Overview />)
   expect(await screen.findByRole('alert')).toHaveTextContent('Unable to reach the backend')
   expect(screen.getByText('Database unavailable')).toBeInTheDocument()
@@ -66,7 +67,7 @@ it('does not invent metrics when database requests fail', async () => {
 })
 
 it('renders database leads and sends applied search filters', async () => {
-  vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({ items: [lead], total: 1, limit: 20, offset: 0 }) } as Response)
+  vi.mocked(fetch).mockImplementation(async url => ({ ok: true, status: 200, json: async () => discoveryFixture(String(url)) ?? { items: [lead], total: 1, limit: 20, offset: 0 } }) as Response)
   mount(<SavedLeads />)
   expect(await screen.findByText('User lead')).toBeInTheDocument()
   const user = userEvent.setup()
@@ -77,7 +78,7 @@ it('renders database leads and sends applied search filters', async () => {
 })
 
 it('shows an explicit error for malformed dashboard data', async () => {
-  vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({ status: 'ok' }) } as Response)
+  vi.mocked(fetch).mockImplementation(async url => ({ ok: true, status: 200, json: async () => discoveryFixture(String(url)) ?? { status: 'ok' } }) as Response)
   mount(<Overview />)
   expect(await screen.findByRole('alert')).toHaveTextContent('unexpected data response')
   expect(screen.queryByText('Saved in your local database')).not.toBeInTheDocument()

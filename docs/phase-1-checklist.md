@@ -32,10 +32,20 @@
 - [x] Audit history/evidence persistence via Alembic, progress, cancellation, retry and restart recovery.
 - [x] Approved shell/themes/brand and existing lead workflow preserved.
 - [x] Automated tests, actual public audit in Chrome, responsive reports and lead regression.
-- [ ] User review and approval for any additional checkpoint work.
+- [x] User explicitly authorized Checkpoint 3B and GitHub integration.
+
+## Checkpoint 3B — ready for review
+
+- [x] Initial Checkpoint 3A commit/push after remote/history/security checks.
+- [x] Modular Overpass adapter, bounded real OSM discovery and verified provider policy.
+- [x] Location/category/provider/limit/filter validation and attributed source evidence.
+- [x] Review/select/save to a separate ODbL source collection; nullable websites preserved.
+- [x] Cancellation, retry, persistent history/cache/cooldowns and actionable failures.
+- [x] Existing lead CRUD/imports/audits/themes retained; no future features.
+- [x] Deterministic tests and focused Chrome/live provider verification.
+- [ ] User review before Checkpoint 4.
 
 ## Remaining checkpoints — not started
 
-3B (scope requires approval). Compliant business discovery only after provider permission/configuration is verified. No discovery implementation in 3A.
 4. Backend-only Gemini, explainable scoring, personalized editable drafts, usage/error handling.
 5. Expanded full E2E, performance/accessibility/security review, CSV export, documentation.

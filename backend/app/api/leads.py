@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database.session import get_session
+from app.models.discovery import DiscoveredBusiness
 from app.models.lead import Lead
 from app.schemas.lead import LeadCreate, LeadPatch, LeadRead, LeadStatus
 from app.services.imports import MAX_BYTES, parse_csv
@@ -138,7 +139,7 @@ async def import_csv(request: Request, session: DB):
 def dashboard(session: DB):
     counts = dict(session.execute(select(Lead.status, func.count()).group_by(Lead.status)).all())
     recent = session.scalars(select(Lead).order_by(Lead.id.desc()).limit(5)).all()
-    return {'leads_found': sum(counts.values()),
+    return {'leads_found': sum(counts.values()), 'discovered_businesses': session.scalar(select(func.count()).select_from(DiscoveredBusiness)),
             'by_status': {status: counts.get(status, 0) for status in ['new', 'shortlisted', 'contacted', 'won', 'archived']},
             'high_priority': None, 'drafts_ready': None,
             'recent': [LeadRead.model_validate(lead) for lead in recent]}

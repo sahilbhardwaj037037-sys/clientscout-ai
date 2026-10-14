@@ -1,4 +1,4 @@
-# Architecture — Checkpoint 3A
+# Architecture — Checkpoint 3B
 
 Browser → React/TypeScript on local Vite → same-origin `/api/...` → configured Vite proxy → local FastAPI → SQLAlchemy → SQLite.
 
@@ -35,7 +35,7 @@ No lead data is stored in localStorage; only theme preference is. Browser refres
 - Imported files are ≤1 MiB/500 non-empty rows, validated UTF-8; only known data columns allowed. No formulas are executed or files retained. CSV export is not implemented.
 - Keys/environment/database/caches/build artifacts are ignored; no API-key field exists in the frontend.
 - Stored URL checks block dangerous schemes/credentials/local literals. Explicit audits use the public pinned transport and bounded redirect/body/time protections described below; imports remain network-free.
-- No discovery provider, automatic Google Maps discovery, opportunity scoring, AI, outreach, background schedules or deployment.
+- No prohibited Google Maps scraping, opportunity scoring, AI, outreach, background schedules or deployment.
 
 SQLite persistence is intended for a single local user. Imports report per-row results immediately and preserve per-lead source metadata; an import run history table is not implemented. Database backups require stopping the backend first.
 
@@ -59,3 +59,13 @@ The FastAPI lifespan owns task shutdown/recovery. Tests override both session de
 Endpoints: GET `/api/audits/config`; POST `/api/audits`; GET `/api/audits?lead_id=&limit=&offset=`; GET `/api/audits/{id}`; POST `/api/audits/{id}/cancel`. A POST needs a validated URL and `permission_confirmed=true`; `use_pagespeed` defaults false. Lead IDs must refer to matching-host leads. Rejected starts create no run; accepted failures/cancellations remain auditable. No capability silently treats unavailable data as success.
 
 [HTTPcore backend reference](https://www.encode.io/httpcore/network-backends/) documents the custom socket interface; [Protego](https://github.com/scrapy/protego) documents robots matching. Remaining limitations and current check results are in `checkpoint-3a-results.md`.
+
+## Attributed business discovery
+
+`providers/base.py` defines the modular async provider protocol; `providers/overpass.py` implements escaped bounded OSM queries, exact-place/coordinate resolution, strict source parsing, evidence/attribution and cache use. `SafeFetcher.post` reuses the existing audit transport's DNS pinning, TLS, streaming limits and deadline. Provider redirects are refused. No Nominatim or frontend provider fetch exists.
+
+`discovery/manager.py` owns one task, persisted 30-second/global Retry-After cooldowns, a rolling 20-start budget, 100-second deadline, 24-hour cache and explicit cancellation/recovery. It uses short database sessions outside network awaits. Lifespan shuts down both independent audit/discovery managers. Migration **0003_discovery** adds three source-layer tables without changing leads/audits. Health checks the current revision and all tables. The original lead totals/statuses remain unchanged; dashboard adds a separate saved-discovery count.
+
+`api/discovery.py` exposes config/start/read/history/cancel/review-save/saved-list routes. Save uses only staged server-side records selected by validated source IDs from a completed run with an allowed licence; atomic unique-key savepoints preserve previously saved records. OSM records never enter the website-required private lead table automatically. Nullable source fields are retained.
+
+`components/Discovery.tsx` extends the approved SearchCard, persists the selected run in the route query, polls active state only, aborts obsolete reads, and requires selection/licence acknowledgement. SavedLeads adds an independently paginated source collection. `services/discovery.ts` validates API payloads and safe source links before rendering. Attribution stays beside preview and saved records. Existing approved theme tokens, shell geometry and manual lead workflows remain. See [provider policy and licensing](discovery-provider.md) for the precise bounds and obligations.

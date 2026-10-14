@@ -31,3 +31,9 @@ PAGESPEED_ENABLED = _pagespeed_flag == 'true'
 PAGESPEED_DAILY_LIMIT = int(os.environ.get('PAGESPEED_DAILY_LIMIT') or 10)
 if not 1 <= PAGESPEED_DAILY_LIMIT <= 100:
     raise ValueError('PAGESPEED_DAILY_LIMIT must be between 1 and 100.')
+
+_discovery_flag = (os.environ.get('DISCOVERY_ENABLED') or 'true').lower()
+if _discovery_flag not in {'true', 'false'}:
+    raise ValueError('DISCOVERY_ENABLED must be true or false.')
+DISCOVERY_ENABLED = _discovery_flag == 'true'
+OVERPASS_API_URL = os.environ.get('OVERPASS_API_URL') or 'https://overpass-api.de/api/interpreter'

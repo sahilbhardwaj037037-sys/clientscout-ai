@@ -199,3 +199,12 @@ dl dt { flex-shrink: 0; } dl dd { text-align: right; }
 .audit-sources summary { cursor: pointer; min-height: 44px; padding: 10px 0; }
 .audit-sources p { overflow-wrap: anywhere; }
 @media (max-width: 760px) { .audit-finding .section-top { align-items: flex-start; } .audit-history-row { flex-wrap: wrap; } }
+/* Discovery extends existing surfaces without altering theme or shell geometry. */
+.discovery-review { border-top: 1px solid var(--border); margin-top: 24px; padding-top: 20px; }
+.discovery-row { display: flex; gap: 16px; align-items: flex-start; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.business-details { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.business-details small, .business-details > a { display: block; font-size: 12px; margin-top: 5px; }
+.business-details small { color: var(--muted); }
+.discovery-row .check-label { margin: 0; }
+.search-fields input, .search-fields select { color: var(--text); }
+@media (max-width: 760px) { .discovery-row { flex-wrap: wrap; gap: 12px; } .discovery-row .business-details { flex-basis: 75%; } }

@@ -96,6 +96,12 @@ class SafeFetcher:
         await self.pool.aclose()
 
     async def get(self, url, max_bytes=2 * 1024 * 1024, timeout=12, read_timeout=8):
+        return await self._request(url, max_bytes=max_bytes, timeout=timeout, read_timeout=read_timeout)
+
+    async def post(self, url, content, max_bytes=8 * 1024 * 1024, timeout=35, read_timeout=30, user_agent=USER_AGENT):
+        return await self._request(url, max_bytes=max_bytes, timeout=timeout, read_timeout=read_timeout, method='POST', content=content, user_agent=user_agent)
+
+    async def _request(self, url, max_bytes, timeout, read_timeout, method='GET', content=None, user_agent=USER_AGENT):
         try:
             url, _ = normalize_url(url)
         except ValueError as error:
@@ -104,8 +110,9 @@ class SafeFetcher:
         connections_before = len(self.backend.connections)
         try:
             async with asyncio.timeout(timeout):
-                async with self.pool.stream('GET', url, headers={
-                    'User-Agent': USER_AGENT, 'Accept': 'text/html,text/plain,application/json;q=0.9,*/*;q=0.1',
+                async with self.pool.stream(method, url, content=content, headers={
+                    **({'Content-Type': 'application/x-www-form-urlencoded'} if method == 'POST' else {}),
+                    'User-Agent': user_agent, 'Accept': 'text/html,text/plain,application/json;q=0.9,*/*;q=0.1',
                     'Accept-Encoding': 'identity',
                 }, extensions={'timeout': {'connect': 5, 'read': read_timeout, 'write': 5, 'pool': 2}}) as response:
                     headers = {}
