@@ -13,6 +13,8 @@ from app.api.discovery import router as discovery_router
 from app.auditing.manager import AuditManager
 from app.auditing.runner import run_audit
 from app.api.audits import router as audits_router
+from app.api.research import router as research_router
+from app.research.manager import ResearchManager
 from app.database.session import engine
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,16 +41,19 @@ async def lifespan(application):
     application.state.enrichment_manager=enrichment;enrichment.recover()
     ai=AIManager(getattr(application.state,'audit_engine',engine),provider=getattr(application.state,'gemini_provider',select_context),writer_provider=getattr(application.state,'gemini_writer_provider',write_proposal))
     application.state.ai_manager=ai;ai.recover()
+    research=ResearchManager(getattr(application.state,'audit_engine',engine))
+    application.state.research_manager=research;research.start()
     try:
         yield
     finally:
+        await research.shutdown()
         await ai.shutdown()
         await enrichment.shutdown()
         await discovery.shutdown()
         await worker.shutdown()
 
 
-app = FastAPI(title='ClientScout AI', version='0.4.0', lifespan=lifespan)
+app = FastAPI(title='ClientScout AI', version='0.5.1', lifespan=lifespan)
 LOCAL_ORIGINS = [f'http://{host}:{port}' for host in ['127.0.0.1', 'localhost'] for port in [FRONTEND_PORT, FRONTEND_PORT + 1, API_PORT]]
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['localhost', '127.0.0.1', '[::1]'])
 app.add_middleware(
@@ -104,7 +109,7 @@ class HealthResponse(BaseModel):
 @app.get('/api/health', response_model=HealthResponse)
 def health(session: Session = Depends(get_session)):
     revision = session.scalar(text('SELECT version_num FROM alembic_version'))
-    if revision != '0006_ai_jobs':
+    if revision != '0007_research_foundation':
         raise HTTPException(503, 'Database migration required. Run alembic upgrade head from backend.')
     session.execute(text('SELECT id FROM leads LIMIT 1'))
     session.execute(text('SELECT id FROM audits LIMIT 1'))
@@ -113,7 +118,8 @@ def health(session: Session = Depends(get_session)):
     session.execute(text('SELECT key FROM discovery_cache LIMIT 1'))
     session.execute(text('SELECT id FROM business_identities LIMIT 1'))
     session.execute(text('SELECT id FROM ai_usage LIMIT 1'))
-    return HealthResponse(status='ok', service='clientscout-api', version='0.4.0', checkpoint=4, database='ready')
+    session.execute(text('SELECT id FROM research_jobs LIMIT 1'))
+    return HealthResponse(status='ok', service='clientscout-api', version='0.5.1', checkpoint=5, database='ready')
 
 
 app.include_router(router)
@@ -123,3 +129,5 @@ app.include_router(audits_router)
 app.include_router(discovery_router)
 
 app.include_router(intelligence_router)
+
+app.include_router(research_router)

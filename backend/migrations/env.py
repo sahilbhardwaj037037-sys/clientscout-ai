@@ -5,6 +5,8 @@ from app.models.intelligence import BusinessIdentity, Enrichment, ContactMethod,
 from app.models.audit import Audit  # noqa: F401
 from app.models.lead import Lead  # noqa: F401
 
+from app.models.research import ResearchPlanRevision, ResearchJob, ResearchStep, ResearchAttempt, ResearchApproval, ResearchEvent, ResearchWorkerLease  # noqa: F401
+
 config = context.config
 
 def run_migrations_offline():

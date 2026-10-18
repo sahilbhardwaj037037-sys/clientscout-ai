@@ -223,3 +223,13 @@ dl dt { flex-shrink: 0; } dl dd { text-align: right; }
 @media (max-width: 760px) { .score-components { grid-template-columns: 1fr; } }
 
 .proposal-draft-text { white-space: pre-wrap; line-height: 1.65; }
+
+/* Offline research foundation reuses existing theme surfaces and focus controls. */
+.research-card, .research-notice { overflow-wrap: anywhere; min-width: 0; }
+.research-card input, .research-card select { min-width: 0; width: 100%; }
+.research-row { gap: 12px; flex-wrap: wrap; }
+.research-row > span { min-width: 0; }
+.research-row small { display: block; }
+.research-card code { overflow-wrap: anywhere; white-space: normal; }
+.research-card .connection-alert { align-items: flex-start; }
+@media (max-width: 760px) { .research-card .form-grid { grid-template-columns: 1fr; } }

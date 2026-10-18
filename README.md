@@ -2,6 +2,8 @@
 
 Your Personal Freelance Intelligence Workspace.
 
+**Checkpoint 5.1 foundation:** Research now saves immutable, paused plans and runs explicitly requested offline checks. Live discovery, website research and Gemini are not connected to these jobs. See [implementation, migration safety and manual acceptance](docs/checkpoint-5-1-foundation.md). Existing installations require migration `0007_research_foundation`; startup never migrates automatically. See the [final audit](docs/checkpoint-5-1-final-audit.md) for the verified local migration and acceptance results.
+
 **Checkpoint 4 ready for review.** The approved shell and cream/coffee themes are preserved. Local leads, imports, audits and attributed discovery now connect to bounded public business contact enrichment, identity review, explainable evidence priority, advanced filters and editable outreach drafts. Dashboard High Priority uses current qualified assessments; Drafts Ready counts reviewed new-mode drafts and saved historical drafts. Optional backend-only Gemini AI Writer composes unverified outreach from approved public context and a confirmed freelancer profile. Automated verification uses mocked providers; the user separately confirmed a successful live Gemini email workflow. See the [final audit](docs/checkpoint-4-final-audit.md) for scope and remaining limitations.
 
 ## Install

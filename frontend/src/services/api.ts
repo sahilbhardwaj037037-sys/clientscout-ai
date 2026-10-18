@@ -1,3 +1,4 @@
+import { validResearchResponse } from './research'
 import { validIntelligenceResponse } from './intelligence'
 import { validDiscoveryResponse } from './discovery'
 import { validAuditResponse } from './audits'
@@ -29,6 +30,7 @@ function validLead(value: unknown): boolean {
     && ['created_at', 'updated_at'].every(key => typeof value[key] === 'string' && !Number.isNaN(Date.parse(String(value[key]))))
 }
 function validateResponse(path: string, value: unknown): boolean {
+  if (path.startsWith('/research')) return validResearchResponse(path, value)
   if (path.startsWith('/intelligence')) return validIntelligenceResponse(path, value)
   if (path.startsWith('/discovery')) return validDiscoveryResponse(path, value)
   if (path.startsWith('/audits')) return validAuditResponse(path, value)

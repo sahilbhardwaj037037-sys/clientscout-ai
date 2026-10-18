@@ -5,9 +5,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { discoveryFixture } from './fixtures/discovery'
 
-const health = { status: 'ok', service: 'clientscout-api', version: '0.4.0', checkpoint: 4, database: 'ready' }
+const health = { status: 'ok', service: 'clientscout-api', version: '0.5.1', checkpoint: 5, database: 'ready' }
 function mount(path = '/') { return render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>) }
-beforeEach(() => { vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => ({ ok: true, json: async () => discoveryFixture(String(url)) ?? (String(url).endsWith('/health') ? health : String(url).endsWith('/audits/config') ? { pagespeed_enabled: false, pagespeed_daily_limit: 10, max_active: 2, hostname_cooldown_seconds: 60, total_timeout_seconds: 100 } : String(url).includes('/audits?') ? { items: [], total: 0, limit: 20, offset: 0 } : String(url).includes('/leads?') ? { items: [], total: 0, limit: 20, offset: 0 } : { leads_found: 0, by_status: { new: 0, shortlisted: 0, contacted: 0, won: 0, archived: 0 }, high_priority: null, drafts_ready: null, recent: [] }) }))) })
+beforeEach(() => { vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => ({ ok: true, json: async () => discoveryFixture(String(url)) ?? (String(url).endsWith('/research/status') ? { mode: 'offline_foundation', worker: 'active', external_dispatch_enabled: false, message: 'Only local checks are connected.' } : String(url).includes('/research/jobs?') ? { items: [], total: 0, limit: 20, offset: 0 } : String(url).endsWith('/health') ? health : String(url).endsWith('/audits/config') ? { pagespeed_enabled: false, pagespeed_daily_limit: 10, max_active: 2, hostname_cooldown_seconds: 60, total_timeout_seconds: 100 } : String(url).includes('/audits?') ? { items: [], total: 0, limit: 20, offset: 0 } : String(url).includes('/leads?') ? { items: [], total: 0, limit: 20, offset: 0 } : { leads_found: 0, by_status: { new: 0, shortlisted: 0, contacted: 0, won: 0, archived: 0 }, high_priority: null, drafts_ready: null, recent: [] }) }))) })
 
 describe('workspace foundation', () => {
   it('renders honest empty metrics and fetches real health route', async () => {
@@ -23,7 +23,7 @@ describe('workspace foundation', () => {
   it('navigates all screens and keeps an active accessible route', async () => {
     const user = userEvent.setup()
     mount()
-    for (const title of ['Find Leads', 'Website Audit', 'Proposal Studio', 'Saved Leads', 'Settings', 'Overview']) {
+    for (const title of ['Research', 'Find Leads', 'Website Audit', 'Proposal Studio', 'Saved Leads', 'Settings', 'Overview']) {
       await user.click(screen.getByRole('link', { name: title }))
       expect(screen.getByRole('heading', { level: 1, name: title === 'Overview' ? 'Find your next client.' : title })).toBeInTheDocument()
       expect(screen.getByRole('link', { name: title })).toHaveAttribute('aria-current', 'page')

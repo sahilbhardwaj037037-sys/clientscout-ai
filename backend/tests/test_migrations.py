@@ -16,7 +16,7 @@ def test_migrations_upgrade_downgrade_reopen(tmp_path):
     engine.dispose()
     reopened = make_engine(path)
     with reopened.begin() as connection:
-        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0006_ai_jobs'
+        assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0007_research_foundation'
         config.attributes['connection'] = connection
         command.downgrade(config, 'base')
     assert 'leads' not in inspect(reopened).get_table_names()
