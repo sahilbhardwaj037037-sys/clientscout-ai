@@ -1,0 +1,34 @@
+[
+  {
+    "subject": "A small website refinement for HAPPY",
+    "body": "Hi HAPPY team,\n\nI appreciate the public website you already have for your business. On the page checked, some images had no alt attribute in the downloaded HTML. Adding useful image descriptions could make those images clearer to people using assistive tools.\n\nI could help you refine your existing website. If useful, we could talk through the options. Would next week suit you?\n\nKind regards,\nSam",
+    "finding_ids": ["image_alt_missing"], "service_ids": ["frontend"], "project_ids": [], "used_links": [], "offers_walkthrough": false,
+    "claims": [
+      {"fact_id": "website_present", "text": "I appreciate the public website you already have for your business."},
+      {"fact_id": "finding:image_alt_missing", "text": "On the page checked, some images had no alt attribute in the downloaded HTML."},
+      {"fact_id": "benefit:image_alt_missing", "text": "Adding useful image descriptions could make those images clearer to people using assistive tools."},
+      {"fact_id": "service:frontend", "text": "I could help you refine your existing website."}
+    ]
+  },
+  {
+    "subject": "A quick question for HAPPY",
+    "body": "Hello HAPPY,\n\nI'm glad your business already has a public website. In a static check of one page, some images had no alternative-text attribute. I could help with updates and refinements to your website.\n\nCould reviewing image descriptions be a useful next step? If you want to explore this, feel free to reply. Have a lovely day.\n\nThanks,\nSam",
+    "finding_ids": ["image_alt_missing"], "service_ids": ["frontend"], "project_ids": [], "used_links": [], "offers_walkthrough": false,
+    "claims": [
+      {"fact_id": "website_present", "text": "I'm glad your business already has a public website."},
+      {"fact_id": "finding:image_alt_missing", "text": "In a static check of one page, some images had no alternative-text attribute."},
+      {"fact_id": "service:frontend", "text": "I could help with updates and refinements to your website."}
+    ]
+  },
+  {
+    "subject": "Image descriptions for HAPPY",
+    "body": "Dear HAPPY team,\n\nI appreciate that your business already has a public website. On the checked page, some images were missing alternative-text attributes in the downloaded HTML. Clearer image descriptions may help visitors using assistive tools understand useful images.\n\nIf useful, I could help refine your existing website. I could help refine the visitor experience. If useful, you can explore my portfolio at https://portfolio.example.com/. Would a brief conversation be useful?\n\nWarm regards,\nSam",
+    "finding_ids": ["image_alt_missing"], "service_ids": ["frontend"], "project_ids": [], "used_links": ["https://portfolio.example.com/"], "offers_walkthrough": false,
+    "claims": [
+      {"fact_id": "website_present", "text": "I appreciate that your business already has a public website."},
+      {"fact_id": "finding:image_alt_missing", "text": "On the checked page, some images were missing alternative-text attributes in the downloaded HTML."},
+      {"fact_id": "benefit:image_alt_missing", "text": "Clearer image descriptions may help visitors using assistive tools understand useful images."},
+      {"fact_id": "service:frontend", "text": "If useful, I could help refine your existing website."}
+    ]
+  }
+]

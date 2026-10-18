@@ -1,7 +1,7 @@
 from typing import Annotated
 from urllib.parse import unquote
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import or_, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database.session import get_session
@@ -144,5 +144,5 @@ def dashboard(session: DB):
     priorities=session.scalars(select(Assessment).where(Assessment.id.in_(select(func.max(Assessment.id)).group_by(Assessment.identity_id)),Assessment.score>=70,Assessment.qualification=='qualified')).all()
     return {'leads_found': sum(counts.values()), 'discovered_businesses': session.scalar(select(func.count()).select_from(DiscoveredBusiness)),
             'by_status': {status: counts.get(status, 0) for status in ['new', 'shortlisted', 'contacted', 'won', 'archived']},
-            'high_priority': sum(assessment_current(session,a) for a in priorities), 'drafts_ready': session.scalar(select(func.count()).select_from(OutreachDraft).where(OutreachDraft.saved.is_(True))),
+            'high_priority': sum(assessment_current(session,a) for a in priorities), 'drafts_ready': session.scalar(select(func.count()).select_from(OutreachDraft).where(OutreachDraft.saved.is_(True),or_(OutreachDraft.evidence['writer_version'].as_string().is_(None),OutreachDraft.evidence['writer_version'].as_string()!='human-reviewed-v1',OutreachDraft.evidence['review']['state'].as_string()=='ready'))),
             'recent': [LeadRead.model_validate(lead) for lead in recent]}

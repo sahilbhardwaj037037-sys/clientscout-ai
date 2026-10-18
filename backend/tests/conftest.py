@@ -7,6 +7,12 @@ from sqlalchemy.orm import sessionmaker
 from app.database.session import get_session, make_engine
 from app.main import app
 
+@pytest.fixture(autouse=True)
+def forbid_live_gemini(monkeypatch):
+    from google.genai.models import AsyncModels
+    async def blocked(*args,**kwargs):raise AssertionError('Tests must never make real Gemini calls.')
+    monkeypatch.setattr(AsyncModels,'generate_content',blocked)
+
 @pytest.fixture
 def database(tmp_path):
     engine = make_engine(tmp_path / 'test.db')

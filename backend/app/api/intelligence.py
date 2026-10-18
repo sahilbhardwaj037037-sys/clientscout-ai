@@ -7,8 +7,12 @@ from app.core.settings import GEMINI_API_KEY,GEMINI_MODEL,GEMINI_DAILY_LIMIT
 from app.models.lead import Lead
 from app.models.discovery import DiscoveredBusiness
 from app.models.intelligence import BusinessIdentity,Enrichment,Assessment,OutreachDraft,AIUsage
-from app.schemas.intelligence import Target,EnrichCreate,AIRequest,DraftCreate,DraftEdit
-from app.intelligence.targets import ensure_identity
+from app.schemas.intelligence import Target,EnrichCreate,AIRequest,DraftCreate,DraftEdit,DraftReview,FreelancerProfile,ManualBusinessEmail
+from app.intelligence.profile import read_profile,save_profile
+from app.intelligence.human_writer import is_human_draft,hard_check,content_hash,review_metadata
+from app.intelligence.writer import WritingValidationError
+from app.intelligence.targets import ensure_identity,business_snapshot
+from app.intelligence.manual_contacts import list_manual,add_manual,serialize_manual
 from app.intelligence.freshness import require_current
 from app.intelligence.scoring import assess,SKILLS
 from app.intelligence.drafts import compose
@@ -21,6 +25,11 @@ def escaped(value):return value.replace('\\','\\\\').replace('%','\\%').replace(
 
 @router.get('/config')
 def config():return {'gemini_configured':bool(GEMINI_API_KEY),'gemini_model':GEMINI_MODEL,'gemini_daily_limit':GEMINI_DAILY_LIMIT,'skills':SKILLS,'max_pages':3,'max_requests':8,'enrichment_daily_limit':10,'cache_hours':24,'sources':['Saved OSM business tags (ODbL)','Permitted business website/contact/about pages','Optional Wikidata business entity (CC0)','Public business social links only; profiles are not fetched']}
+
+@router.get('/freelancer-profile')
+def freelancer_profile(s:DB):return read_profile(s.get_bind())
+@router.patch('/freelancer-profile')
+def update_freelancer_profile(payload:FreelancerProfile,s:DB):return save_profile(s.get_bind(),payload)
 
 @router.get('/targets')
 def targets(s:DB,limit:int=Query(50,ge=1,le=100),offset:int=Query(0,ge=0),q:str=Query('',max_length=100)):
@@ -39,7 +48,17 @@ def target_state(target_type:Literal['lead','discovery'],target_id:int,s:DB):
     identity=s.scalar(select(BusinessIdentity).where(column==target_id))
     job=s.scalar(select(Enrichment).where(Enrichment.identity_id==identity.id).order_by(Enrichment.id.desc())) if identity else None
     assessment=s.scalar(select(Assessment).where(Assessment.identity_id==identity.id).order_by(Assessment.id.desc())) if identity else None
-    return {'business':snapshot,'identity_id':identity.id if identity else None,'enrichment':serialize(job) if job else None,'assessment':serialize(assessment) if assessment and assessment.report.get('business')==snapshot else None}
+    return {'business':snapshot,'identity_id':identity.id if identity else None,'manual_contacts':list_manual(s,identity.id if identity else None),'enrichment':serialize(job) if job else None,'assessment':serialize(assessment) if assessment and assessment.report.get('business')==snapshot else None}
+
+@router.post('/targets/{target_type}/{target_id}/manual-email',status_code=201)
+def manual_email(target_type:Literal['lead','discovery'],target_id:int,payload:ManualBusinessEmail,s:DB):
+    record=s.get(Lead if target_type=='lead' else DiscoveredBusiness,target_id)
+    if not record:raise HTTPException(404,'Business not found.')
+    column=BusinessIdentity.lead_id if target_type=='lead' else BusinessIdentity.discovered_business_id
+    identity=s.scalar(select(BusinessIdentity).where(column==target_id))
+    if not identity or business_snapshot(record)!=identity.snapshot:
+        raise HTTPException(422,'Business source changed or has not been checked. Review its official website first.')
+    row=add_manual(s,identity,payload);s.commit();s.refresh(row);return serialize_manual(row)
 
 @router.post('/enrichments',status_code=202)
 async def start(payload:EnrichCreate,request:Request):return await request.app.state.enrichment_manager.start(payload)
@@ -91,11 +110,20 @@ async def generate(payload:DraftCreate,request:Request,s:DB):
     require_current(s,assessment)
     if payload.generator=='gemini':
         if not payload.public_data_consent:raise HTTPException(422,'Confirm sending the bounded public evidence to Gemini first.')
-        return await request.app.state.ai_manager.start(assessment.id,'draft',payload.channel)
+        assessment_id=assessment.id
+        # Release the request reader before the manager commits on another connection.
+        # The manager revalidates current evidence in its own transaction.
+        s.close()
+        return await request.app.state.ai_manager.start(assessment_id,'draft',payload.channel,payload.include_profile)
     draft=compose(assessment,payload.channel);s.add(draft);s.commit();s.refresh(draft);return serialize(draft)
 @router.get('/drafts')
-def drafts(s:DB,limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0)):
-    statement=select(OutreachDraft).where(OutreachDraft.saved.is_(True));total=s.scalar(select(func.count()).select_from(statement.subquery()))
+def drafts(s:DB,limit:int=Query(20,ge=1,le=100),offset:int=Query(0,ge=0),saved:bool=True,assessment_id:int|None=Query(None,ge=1)):
+    if not saved and assessment_id is None:raise HTTPException(422,'Select an assessment to list unsaved drafts.')
+    statement=select(OutreachDraft).where(OutreachDraft.saved.is_(saved))
+    if assessment_id is not None:
+        if not s.get(Assessment,assessment_id):raise HTTPException(404,'Assessment not found.')
+        statement=statement.where(OutreachDraft.assessment_id==assessment_id)
+    total=s.scalar(select(func.count()).select_from(statement.subquery()))
     return {'items':[serialize(r) for r in s.scalars(statement.order_by(OutreachDraft.id.desc()).limit(limit).offset(offset)).all()],'total':total,'limit':limit,'offset':offset}
 @router.get('/drafts/{identifier}')
 def draft_read(identifier:int,s:DB):
@@ -106,4 +134,50 @@ def draft_read(identifier:int,s:DB):
 def edit(identifier:int,payload:DraftEdit,s:DB):
     row=s.get(OutreachDraft,identifier)
     if not row:raise HTTPException(404,'Draft not found.')
+    if is_human_draft(row):
+        try:
+            authorization=dict(row.evidence['authorization'])
+            profile=read_profile(s.get_bind())
+            if profile.public_details_confirmed:authorization['freelancer_name']=profile.display_name
+            hard_check(payload.subject,payload.body,authorization,channel=row.channel)
+        except WritingValidationError as error:raise HTTPException(422,str(error)) from None
+        row.evidence={**row.evidence,'authorization':authorization}
+        if row.subject!=payload.subject or row.body!=payload.body:
+            row.evidence={**row.evidence,'review':review_metadata(payload.subject,payload.body)}
+        # No old-text recovery copies are created on edit.
+        s.connection().exec_driver_sql('PRAGMA secure_delete=ON')
     row.body=payload.body;row.subject=payload.subject;row.saved=payload.saved;row.edited=True;s.commit();s.refresh(row);return serialize(row)
+
+@router.post('/drafts/{identifier}/review')
+def review_draft(identifier:int,payload:DraftReview,s:DB):
+    row=s.get(OutreachDraft,identifier)
+    if not row:raise HTTPException(404,'Draft not found.')
+    if not is_human_draft(row):raise HTTPException(409,'This review workflow applies only to Human-Reviewed AI Writer drafts.')
+    if not row.saved:raise HTTPException(409,'Save the draft before acknowledging review.')
+    if not payload.acknowledged:raise HTTPException(422,'Explicit review acknowledgement is required.')
+    if payload.content_hash!=content_hash(row.subject,row.body):raise HTTPException(409,'Draft changed. Reload and review the current text.')
+    try:hard_check(row.subject,row.body,row.evidence['authorization'],channel=row.channel)
+    except WritingValidationError as error:raise HTTPException(422,str(error)) from None
+    from app.models.lead import now
+    row.evidence={**row.evidence,'review':{'state':'ready','factual_status':'unverified','content_hash':payload.content_hash,'acknowledged_at':now().isoformat()}}
+    s.commit();s.refresh(row);return serialize(row)
+
+@router.delete('/drafts/{identifier}/review')
+def revoke_review(identifier:int,s:DB):
+    row=s.get(OutreachDraft,identifier)
+    if not row:raise HTTPException(404,'Draft not found.')
+    if not is_human_draft(row):raise HTTPException(409,'Historical draft review metadata is preserved.')
+    row.evidence={**row.evidence,'review':review_metadata(row.subject,row.body)}
+    s.commit();s.refresh(row);return serialize(row)
+
+@router.delete('/drafts/{identifier}',status_code=204)
+def discard_draft(identifier:int,s:DB):
+    row=s.get(OutreachDraft,identifier)
+    if not row:raise HTTPException(404,'Draft not found.')
+    if not is_human_draft(row):raise HTTPException(409,'Historical drafts are preserved. Only Human-Reviewed AI Writer drafts can be discarded here.')
+    # Delete the only application-held output copy, including its evidence JSON.
+    # Keep content-free usage/attempt rows and remove stale reopening references.
+    s.connection().exec_driver_sql('PRAGMA secure_delete=ON')
+    for job in s.scalars(select(AIUsage).where(AIUsage.result['draft_id'].as_integer()==identifier)).all():
+        job.result={'discarded':True}
+    s.delete(row);s.commit()

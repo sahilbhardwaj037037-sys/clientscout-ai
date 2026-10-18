@@ -46,3 +46,33 @@ def test_health_does_not_claim_success_before_migration(client, tmp_path):
     assert response.status_code == 503
     assert 'alembic upgrade head' in response.json()['detail']
     empty.dispose()
+
+
+def test_sqlite_failures_have_safe_distinct_responses(client,monkeypatch):
+    import sqlite3
+    from sqlalchemy.exc import OperationalError
+    from app.database.session import get_session
+    from app.main import app
+    cases=[
+        (sqlite3.SQLITE_BUSY,'database is locked','database_busy'),
+        (sqlite3.SQLITE_LOCKED,'database table is locked','database_busy'),
+        (sqlite3.SQLITE_BUSY | (2 << 8),'database is locked','database_busy'),
+        (sqlite3.SQLITE_READONLY,'attempt to write a readonly database','database_access_error'),
+        (sqlite3.SQLITE_CANTOPEN,'unable to open database file','database_access_error'),
+        (sqlite3.SQLITE_PERM,'access permission denied','database_access_error'),
+        (sqlite3.SQLITE_ERROR,'no such table: PRIVATE_TABLE','database_schema_error'),
+        (sqlite3.SQLITE_ERROR,'no such column: PRIVATE_COLUMN','database_schema_error'),
+        (sqlite3.SQLITE_ERROR,'near PRIVATE_SQL: syntax error','database_unavailable'),
+    ]
+    for code,message,expected in cases:
+        original=sqlite3.OperationalError(message);original.sqlite_errorcode=code
+        def fail():
+            raise OperationalError('PRIVATE_SQL',{'credential':'PRIVATE_PARAMETER'},original)
+            yield  # Keep the same dependency shape; no query reaches SQLite.
+        monkeypatch.setitem(app.dependency_overrides,get_session,fail)
+        response=client.get('/api/health')
+        assert response.status_code==503
+        assert response.json()['code']==expected
+        assert 'PRIVATE' not in response.text
+        assert ('alembic upgrade head' in response.json()['detail'])==(expected=='database_schema_error')
+        assert ('Retry-After' in response.headers)==(expected=='database_busy')

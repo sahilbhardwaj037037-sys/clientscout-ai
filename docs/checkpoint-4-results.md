@@ -1,5 +1,7 @@
 # Checkpoint 4 verification — 14 October 2026
 
+Historical verification record. For the current writer, manual email observations, user-confirmed live workflow and pre-commit checks, see the [18 October final audit](checkpoint-4-final-audit.md). Credential availability, test counts and implementation descriptions below describe the original 14 October run.
+
 ## Resumed scope
 
 Resumed the interrupted local working tree on main at **2dd04c740cbc094fe0126560ea6519b99652cef9**, which matched remote main before committing. The pre-existing unfinished implementation was retained and inspected; no reset, discard or history rewrite. Checkpoint 5 was not started.

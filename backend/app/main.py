@@ -1,9 +1,10 @@
 """Local leads, permitted source research and explicitly requested AI assistance."""
 from typing import Literal
+import sqlite3
 from contextlib import asynccontextmanager
 from app.api.intelligence import router as intelligence_router
 from app.intelligence.enrichment import enrich
-from app.providers.gemini import select_context
+from app.providers.gemini import select_context,write_proposal
 from app.intelligence.manager import EnrichmentManager
 from app.intelligence.ai_manager import AIManager
 from app.providers.diagnostics import configure_logging
@@ -36,7 +37,7 @@ async def lifespan(application):
     discovery.recover()
     enrichment=EnrichmentManager(getattr(application.state,'audit_engine',engine),runner=getattr(application.state,'enrichment_runner',enrich))
     application.state.enrichment_manager=enrichment;enrichment.recover()
-    ai=AIManager(getattr(application.state,'audit_engine',engine),provider=getattr(application.state,'gemini_provider',select_context))
+    ai=AIManager(getattr(application.state,'audit_engine',engine),provider=getattr(application.state,'gemini_provider',select_context),writer_provider=getattr(application.state,'gemini_writer_provider',write_proposal))
     application.state.ai_manager=ai;ai.recover()
     try:
         yield
@@ -69,8 +70,27 @@ async def protect_local_writes(request, call_next):
 
 
 @app.exception_handler(SQLAlchemyError)
-async def database_error(_request, _error):
-    return JSONResponse(status_code=503, content={'detail': 'Database unavailable. Check local database permissions and run alembic upgrade head from backend.'})
+async def database_error(_request, error):
+    original=getattr(error,'orig',None)
+    code=getattr(original,'sqlite_errorcode',None)
+    base_code=(code & 0xff) if isinstance(original,sqlite3.Error) and type(code) is int else None
+    if base_code in {sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED}:
+        return JSONResponse(status_code=503,headers={'Retry-After':'2'},content={
+            'code':'database_busy',
+            'detail':'Database busy: another transaction is holding a lock. Refresh job status before trying again.'})
+    if base_code in {sqlite3.SQLITE_READONLY,sqlite3.SQLITE_CANTOPEN,sqlite3.SQLITE_PERM}:
+        return JSONResponse(status_code=503,content={
+            'code':'database_access_error',
+            'detail':'Database file cannot be opened or written. Check the local database path and filesystem permissions.'})
+    # Inspect only the native error locally; never return SQL, parameters, paths,
+    # exception strings or credential values in an API response.
+    if base_code==sqlite3.SQLITE_ERROR and str(original).lower().startswith(('no such table:','no such column:')):
+        return JSONResponse(status_code=503,content={
+            'code':'database_schema_error',
+            'detail':'Database schema does not match this application. Run alembic upgrade head from backend.'})
+    return JSONResponse(status_code=503,content={
+        'code':'database_unavailable',
+        'detail':'Database unavailable. Check backend status and local database access.'})
 
 
 class HealthResponse(BaseModel):

@@ -13,6 +13,8 @@ coverage/
 *.db
 *.db-*
 backend/data/
+freelancer-profile.json
+.profile-*
 *.sqlite
 *.sqlite3
 *.sqlite-*

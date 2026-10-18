@@ -221,3 +221,5 @@ dl dt { flex-shrink: 0; } dl dd { text-align: right; }
 .contact-row small { color: var(--muted); }
 .settings-card input, .settings-card select { color: var(--text); }
 @media (max-width: 760px) { .score-components { grid-template-columns: 1fr; } }
+
+.proposal-draft-text { white-space: pre-wrap; line-height: 1.65; }

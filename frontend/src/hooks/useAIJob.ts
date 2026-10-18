@@ -6,6 +6,12 @@ export function useAIJob(done: (job: AIJob) => void) {
   const [error, setError] = useState<string>()
   const [revision, setRevision] = useState(0)
   const callback = useRef(done); callback.current = done
+  const handled = useRef(new Set<number>())
+  useEffect(() => {
+    if (!job || active(job) || handled.current.has(job.id)) return
+    handled.current.add(job.id)
+    callback.current(job)
+  }, [job])
   useEffect(() => {
     if (!job || !active(job)) return
     let disposed = false; let timer: number | undefined
@@ -16,7 +22,6 @@ export function useAIJob(done: (job: AIJob) => void) {
         if (disposed) return
         setJob(value); setError(undefined)
         if (active(value)) timer = window.setTimeout(() => void load(), 1500)
-        else callback.current(value)
       } catch (failure) { if (!disposed) setError(failure instanceof Error ? failure.message : 'AI status unavailable; refresh before generating again.') }
     }
     void load()

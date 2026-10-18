@@ -21,6 +21,7 @@ from app.models.lead import Lead,now
 from app.schemas.intelligence import Target,EnrichCreate,AISelection
 from app.providers.gemini import select_context,GeminiFailure
 from app.providers.wikidata import directory_contacts
+from writer_helpers import confirm_writer,human_written as written
 
 URL='https://example.com/'
 HTML=b'''<html><title>Fixture Cafe</title><script type="application/ld+json">{"@type":"Restaurant","name":"Fixture Cafe","email":"info@example.com","telephone":"+44 1234 567890","sameAs":["https://www.instagram.com/fixturecafe/"]}</script><body><p>We are a small independent business.</p><a href="mailto:john.smith@example.com">Staff email</a><a href="/contact">Contact</a></body></html>'''
@@ -159,24 +160,34 @@ async def test_ai_quota_usage_no_paid_model_fallback_and_core_scoring(database,m
     with Session(database) as s:a=assess(s,s.get(BusinessIdentity,identity_id));s.commit();aid=a.id
     monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_API_KEY','TEST_KEY')
     calls=[]
-    async def quota(a):calls.append(a.id);raise GeminiFailure(429,'Quota exhausted; no substitute.')
-    manager=AIManager(database,quota);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
+    async def quota(context):calls.append(aid);raise GeminiFailure(429,'Quota exhausted; no substitute.')
+    confirm_writer(database,monkeypatch)
+    manager=AIManager(database,writer_provider=quota);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
     assert manager.read(job['id'])['status']=='error' and calls==[aid]
     with pytest.raises(HTTPException):await manager.start(aid,'draft','email')
     with Session(database) as s:assert s.scalar(select(func.count()).select_from(OutreachDraft))==0 and s.get(Assessment,aid).score is not None
 
 @pytest.mark.anyio
-async def test_ai_success_saves_actual_selection_and_tokens(database,monkeypatch):
+async def test_ai_success_saves_actual_writing_and_tokens(database,monkeypatch):
     _,identity_id,_=await enriched(database,monkeypatch)
     with Session(database) as s:a=assess(s,s.get(BusinessIdentity,identity_id));s.commit();aid=a.id
     monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_API_KEY','TEST_KEY')
-    async def provider(a):return AISelection(opening='brief',finding_ids=[a.report['evidence'][0]['id']],service_ids=['frontend'],closing='permission'),{'input_tokens':40,'output_tokens':20}
-    manager=AIManager(database,provider);job=await manager.start(aid,'draft','whatsapp');await asyncio.gather(*list(manager.tasks.values()))
+    confirm_writer(database,monkeypatch)
+    generated=[]
+    async def provider(context):
+        output=written(context);generated.append(output)
+        return output,{'input_tokens':40,'output_tokens':20}
+    manager=AIManager(database,writer_provider=provider);job=await manager.start(aid,'draft','whatsapp');await asyncio.gather(*list(manager.tasks.values()))
     assert manager.read(job['id'])['status']=='complete' and manager.read(job['id'])['result']['draft_id']
-    with Session(database) as s:assert s.get(AIUsage,job['id']).input_tokens==40 and s.scalar(select(OutreachDraft)).generator=='gemini'
+    with Session(database) as s:
+        row=s.scalar(select(OutreachDraft))
+        assert s.get(AIUsage,job['id']).input_tokens==40 and row.generator=='gemini'
+        assert row.body==generated[0].body and row.subject==generated[0].subject
+        assert row.evidence['writer_version']=='human-reviewed-v1' and not row.saved
 
 
-def test_api_permissions_missing_key_source_lookup_and_unknowns(client):
+def test_api_permissions_missing_key_source_lookup_and_unknowns(client,monkeypatch):
+    monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_API_KEY','')
     lead=client.post('/api/leads',json={'website_url':URL,'business_name':'Fixture Cafe'}).json();identifier=lead['id']
     assert client.get(f'/api/intelligence/targets/lead/{identifier}').json()['assessment'] is None
     assert client.get('/api/intelligence/targets').json()['total']==1
@@ -190,6 +201,59 @@ def test_api_permissions_missing_key_source_lookup_and_unknowns(client):
     assert client.post('/api/intelligence/drafts',json={'assessment_id':a['id'],'review_confirmed':True}).status_code==422
     assert client.get('/api/intelligence/assessments?min_score=101').status_code==422
     assert client.get('/api/intelligence/assessments?segment=madeup').status_code==422
+
+@pytest.mark.anyio
+async def test_unsaved_draft_recovery_is_scoped_read_only_and_preserves_manual_save(client,database,monkeypatch):
+    from app.main import app
+    lead_id,identity_id,_=await enriched(database,monkeypatch)
+    async def no_provider(*args):raise AssertionError('Recovery must never call Gemini')
+    monkeypatch.setattr(app.state.ai_manager,'writer_provider',no_provider)
+    with Session(database) as s:
+        a=assess(s,s.get(BusinessIdentity,identity_id));s.flush();aid=a.id
+        other=assess(s,s.get(BusinessIdentity,identity_id));s.flush()
+        saved=compose(a,'email');saved.saved=True;s.add(saved)
+        older=compose(a,'email',generator='gemini');s.add(older)
+        newer=compose(a,'email',generator='gemini');s.add(newer)
+        template=compose(a,'email');s.add(template)
+        unrelated=compose(other,'email',generator='gemini');s.add(unrelated)
+        # Existing drafts can be recovered even when evidence is too old for new generation.
+        a.created_at=now()-timedelta(hours=48)
+        s.commit()
+        saved_id,older_id,newer_id,template_id,unrelated_id=[d.id for d in (saved,older,newer,template,unrelated)]
+        original={d.id:(d.subject,d.body,d.generator,d.saved,d.edited,d.updated_at) for d in s.scalars(select(OutreachDraft))}
+        notes=s.get(Lead,lead_id).notes
+    assert [d['id'] for d in client.get('/api/intelligence/drafts').json()['items']]==[saved_id]
+    url=f'/api/intelligence/drafts?assessment_id={aid}&saved=false'
+    recovered=client.get(url).json()
+    assert recovered['total']==3 and [d['id'] for d in recovered['items']]==[template_id,newer_id,older_id]
+    assert unrelated_id not in [d['id'] for d in recovered['items']]
+    paged=client.get(url+'&limit=1&offset=1').json()
+    assert paged['total']==3 and [d['id'] for d in paged['items']]==[newer_id]
+    for identifier in (older_id,newer_id):
+        row=client.get(f'/api/intelligence/drafts/{identifier}').json()
+        assert row['subject'] and row['body'] and row['generator']=='gemini' and not row['saved']
+    with Session(database) as s:
+        assert {d.id:(d.subject,d.body,d.generator,d.saved,d.edited,d.updated_at) for d in s.scalars(select(OutreachDraft))}==original
+        assert s.get(Lead,lead_id).notes==notes and s.scalar(select(func.count()).select_from(AIUsage))==0
+    # Only an explicit manual save moves a recovered draft into the saved list.
+    edited=client.patch(f'/api/intelligence/drafts/{older_id}',json={'subject':'Reviewed subject','body':'Manually reviewed older proposal.','saved':True})
+    assert edited.status_code==200 and edited.json()['generator']=='gemini' and edited.json()['edited']
+    assert [d['id'] for d in client.get('/api/intelligence/drafts').json()['items']]==[older_id,saved_id]
+    assert [d['id'] for d in client.get(url).json()['items']]==[template_id,newer_id]
+    with Session(database) as s:
+        newer=s.get(OutreachDraft,newer_id)
+        assert (newer.subject,newer.body,newer.generator,newer.saved,newer.edited,newer.updated_at)==original[newer_id]
+        assert s.scalar(select(func.count()).select_from(OutreachDraft))==5
+        assert s.scalar(select(func.count()).select_from(AIUsage))==0
+
+@pytest.mark.parametrize('query,status',[
+    ('saved=false',422),('saved=false&assessment_id=0',422),('saved=false&assessment_id=-1',422),
+    ('saved=false&assessment_id=bad',422),('saved=false&assessment_id=999',404),
+    ('saved=invalid&assessment_id=1',422),('saved=false&assessment_id=1&limit=101',422),
+    ('saved=false&assessment_id=1&offset=-1',422),
+])
+def test_draft_recovery_validates_assessment_and_pagination(client,query,status):
+    assert client.get('/api/intelligence/drafts?'+query).status_code==status
 
 @pytest.mark.anyio
 async def test_changed_business_cannot_use_old_qualified_assessment(client,database,monkeypatch):
@@ -250,8 +314,9 @@ async def test_ai_rejects_business_change_during_provider_request(database,monke
     async def provider(a):
         with Session(database) as s:
             s.get(Lead,lead_id).business_name='Changed during request';s.commit()
-        return AISelection(opening='direct',finding_ids=[],service_ids=['frontend'],closing='chat'),{'input_tokens':40,'output_tokens':20}
-    manager=AIManager(database,provider);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
+        return written(a),{'input_tokens':40,'output_tokens':20}
+    confirm_writer(database,monkeypatch)
+    manager=AIManager(database,writer_provider=provider);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
     assert manager.read(job['id'])['status']=='error'
     with Session(database) as s:assert s.scalar(select(func.count()).select_from(OutreachDraft))==0
 
@@ -264,8 +329,9 @@ async def test_ai_one_retry_is_counted_against_daily_budget(database,monkeypatch
     async def no_sleep(_):pass
     monkeypatch.setattr('app.intelligence.ai_manager.asyncio.sleep',no_sleep)
     calls=[]
-    async def failure(a):calls.append(a.id);raise GeminiFailure(503,'Provider temporarily unavailable.')
-    manager=AIManager(database,failure);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
+    async def failure(context):calls.append(aid);raise GeminiFailure(503,'Provider temporarily unavailable.')
+    confirm_writer(database,monkeypatch)
+    manager=AIManager(database,writer_provider=failure);job=await manager.start(aid,'draft','email');await asyncio.gather(*list(manager.tasks.values()))
     assert manager.read(job['id'])['status']=='error' and len(calls)==1
     with Session(database) as s:assert s.scalar(select(func.count()).select_from(AIUsage))==1
 
@@ -304,3 +370,66 @@ async def test_provider_obfuscated_email_is_marked_for_review_without_decoding(m
     assert status=='complete' and email['status']=='needs_review' and email['value']==''
     assert email['source_url']==URL and 'No address decoded or guessed' in email['evidence']
     assert fetcher.calls==[URL+'robots.txt',URL]
+
+@pytest.mark.anyio
+async def test_gemini_draft_route_releases_reader_before_reservation_and_preserves_data(client,database,monkeypatch):
+    from sqlalchemy import event,text
+    from app.main import app
+    lead_id,identity_id,_=await enriched(database,monkeypatch)
+    with Session(database) as s:
+        a=assess(s,s.get(BusinessIdentity,identity_id));s.flush();aid=a.id
+        original=compose(a,'email');original.body='Preserved reviewed fixture draft';original.saved=True;s.add(original);s.flush();original_id=original.id
+        notes=s.get(Lead,lead_id).notes;score=a.score;report=a.report;s.commit()
+    # Fail promptly on the pre-fix reader/writer deadlock. Use the real file-based
+    # engine and rollback journal, without touching the workspace database.
+    def short_wait(connection,record,proxy):connection.execute('PRAGMA busy_timeout=100')
+    event.listen(database,'checkout',short_wait)
+    try:
+        with database.connect() as connection:assert connection.scalar(text('PRAGMA journal_mode'))=='delete'
+        calls=[]
+        confirm_writer(database,monkeypatch)
+        async def provider(context):
+            calls.append(aid)
+            return written(context),{'input_tokens':4,'output_tokens':1}
+        manager=app.state.ai_manager
+        monkeypatch.setattr(manager,'writer_provider',provider)
+        monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_API_KEY','TEST_KEY')
+        response=client.post('/api/intelligence/drafts',json={'assessment_id':aid,'generator':'gemini','channel':'email','review_confirmed':True,'public_data_consent':True})
+        assert response.status_code==201,response.json()
+        job_id=response.json()['id']
+        async def finish():await asyncio.gather(*list(manager.tasks.values()))
+        client.portal.call(finish)
+        job=client.get(f'/api/intelligence/ai/{job_id}').json()
+        assert job['status']=='complete' and calls==[aid]
+        generated=client.get(f"/api/intelligence/drafts/{job['result']['draft_id']}").json()
+        assert generated['generator']=='gemini' and generated['assessment_id']==aid
+        with Session(database) as s:
+            assert s.get(OutreachDraft,original_id).body=='Preserved reviewed fixture draft'
+            assert s.get(OutreachDraft,original_id).saved and s.scalar(select(func.count()).select_from(OutreachDraft))==2
+            assert s.get(Lead,lead_id).notes==notes
+            assert s.get(Assessment,aid).score==score and s.get(Assessment,aid).report==report
+            assert s.get(AIUsage,job_id).input_tokens==4
+    finally:event.remove(database,'checkout',short_wait)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('guard,status',[('consent',422),('review',422),('stale',422),('budget',429),('cooldown',429)])
+async def test_gemini_draft_route_retains_validation_and_usage_guards(client,database,monkeypatch,guard,status):
+    from app.main import app
+    _,identity_id,_=await enriched(database,monkeypatch)
+    with Session(database) as s:
+        a=assess(s,s.get(BusinessIdentity,identity_id));s.flush();aid=a.id
+        if guard=='stale':a.created_at=now()-timedelta(hours=25)
+        if guard in {'budget','cooldown'}:
+            s.add(AIUsage(purpose='draft',model='gemini-test',status='error',created_at=now()-timedelta(minutes=2),cooldown_until=now()+timedelta(minutes=1) if guard=='cooldown' else None))
+        s.commit()
+    calls=[]
+    confirm_writer(database,monkeypatch)
+    async def provider(context):calls.append(aid);raise AssertionError('Rejected request must not reach provider')
+    monkeypatch.setattr(app.state.ai_manager,'writer_provider',provider)
+    monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_API_KEY','TEST_KEY')
+    if guard=='budget':monkeypatch.setattr('app.intelligence.ai_manager.GEMINI_DAILY_LIMIT',1)
+    response=client.post('/api/intelligence/drafts',json={'assessment_id':aid,'generator':'gemini','review_confirmed':guard!='review','public_data_consent':guard!='consent'})
+    assert response.status_code==status and calls==[]
+    with Session(database) as s:
+        assert s.scalar(select(func.count()).select_from(OutreachDraft))==0
+        assert s.scalar(select(func.count()).select_from(AIUsage))==(1 if guard in {'budget','cooldown'} else 0)
