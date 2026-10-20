@@ -1,187 +1,311 @@
+<div align="center">
+
 # ClientScout AI
 
-Your Personal Freelance Intelligence Workspace.
+### Your Personal Freelance Intelligence Workspace
 
-**Checkpoint 5.1 foundation:** Research now saves immutable, paused plans and runs explicitly requested offline checks. Live discovery, website research and Gemini are not connected to these jobs. See [implementation, migration safety and manual acceptance](docs/checkpoint-5-1-foundation.md). Existing installations require migration `0007_research_foundation`; startup never migrates automatically. See the [final audit](docs/checkpoint-5-1-final-audit.md) for the verified local migration and acceptance results.
+A local-first workspace for organizing leads, reviewing website evidence, and preparing thoughtful, human-reviewed outreach.
 
-**Checkpoint 4 ready for review.** The approved shell and cream/coffee themes are preserved. Local leads, imports, audits and attributed discovery now connect to bounded public business contact enrichment, identity review, explainable evidence priority, advanced filters and editable outreach drafts. Dashboard High Priority uses current qualified assessments; Drafts Ready counts reviewed new-mode drafts and saved historical drafts. Optional backend-only Gemini AI Writer composes unverified outreach from approved public context and a confirmed freelancer profile. Automated verification uses mocked providers; the user separately confirmed a successful live Gemini email workflow. See the [final audit](docs/checkpoint-4-final-audit.md) for scope and remaining limitations.
+**Under Active Development · Single-user local application**
 
-## Install
+**React · TypeScript · FastAPI · SQLAlchemy · SQLite**
 
-Tested on macOS with Node **24.19.0**, npm **11.17.0**, Python **3.14.7**. Frontend versions and the dependency graph are pinned in `frontend/package.json` and `package-lock.json`; backend versions are pinned in `backend/requirements.txt`.
+[Product experience](#the-workspace) · [Architecture](#architecture) · [Run locally](#local-development) · [Development status](#development-status)
 
-From the repository root:
+</div>
+
+![ClientScout AI dashboard in its cream light theme, with disabled discovery controls, synthetic workspace totals, and recent demonstration leads](docs/screenshots/portfolio-dashboard-desktop-light.jpg)
+
+> **Development snapshot — 20 October 2026.** This is an evolving application, not a finished or production-ready service. The published `feature/checkpoint-5` source contains the Checkpoint 5.1 foundation. Local Checkpoint 5.2A/5.2B development remains uncommitted and is described separately below; this documentation update does not publish that application code.
+
+## The vision
+
+Freelance prospecting often fragments into spreadsheets, website checks, bookmarks, and draft messages. ClientScout AI brings those steps into one focused workspace while keeping the difference between supplied information, observed evidence, and unknown facts visible.
+
+The current product emphasizes deliberate actions: save a lead, review a permitted source, inspect an assessment, and approve a draft before using it. Its longer-term research direction builds on that foundation; autonomous prospecting is not presented as an operational capability.
+
+## The workspace
+
+| Area | Implemented experience | Evidence |
+| --- | --- | --- |
+| Overview | Database-backed lead totals, status counts, recent opportunities, qualified high-priority counts, and saved-draft readiness | [Workspace](frontend/src/pages/Workspace.tsx), [dashboard API](backend/app/api/leads.py) |
+| Lead management | Add, edit, delete, search, filter, paginate, and review manual/CSV leads with persistent statuses and notes | [Leads UI](frontend/src/pages/Leads.tsx), [lead API](backend/app/api/leads.py) |
+| Import | URL normalization and hostname deduplication; bounded UTF-8 CSV parsing with created/duplicate/invalid row outcomes | [Import component](frontend/src/components/CsvImport.tsx), [parser](backend/app/services/imports.py) |
+| Website audit | Explicitly requested static website observations, evidence, recommendations, persisted job history, and optional PageSpeed measurements | [Audit page](frontend/src/pages/WebsiteAudit.tsx), [audit runner](backend/app/auditing/runner.py) |
+| Business discovery | Bounded OpenStreetMap/Overpass searches, persisted history/cache, attribution, and deliberate selected-record saving | [Discovery UI](frontend/src/components/Discovery.tsx), [provider](backend/app/providers/overpass.py) |
+| Lead intelligence | Bounded public business-contact enrichment, identity review, explainable assessments, and advanced filters | [Intelligence UI](frontend/src/components/LeadIntelligence.tsx), [scoring](backend/app/intelligence/scoring.py) |
+| Proposal Studio | Editable local templates; optional backend-only Gemini writing; saved-text review acknowledgement before new-mode drafts are ready for manual outreach | [Proposal Studio](frontend/src/pages/ProposalStudio.tsx), [writer policy](docs/option-a-human-reviewed-writer.md) |
+| Research foundation | Immutable plan revisions, paused-by-default jobs, explicit offline checks, persistent progress/activity, and versioned controls | [Research manager](backend/app/research/manager.py), [foundation notes](docs/checkpoint-5-1-foundation.md) |
+| Preferences | Persistent light/dark/system themes, collapsible desktop sidebar, mobile navigation, and backend health checks | [Application shell](frontend/src/App.tsx), [theme hook](frontend/src/hooks/useTheme.ts) |
+
+These implementations were inspected in source and exercised through isolated automated checks. External discovery, website fetching, PageSpeed, and Gemini were **not** called during this audit; passing mocked tests is not live-provider verification.
+
+### A clear home for leads
+
+The lifecycle is **New → Shortlisted → Contacted → Won**, with **Archived** available as a separate status. These are editable user-recorded states, not an enforced sales sequence. Choosing Contacted does not send a message, and choosing Won does not establish a verified business result.
+
+![Saved Leads with fictional Demo businesses, reserved example domains, status badges, and filtering controls](docs/screenshots/portfolio-leads-desktop.jpg)
+
+Details keep the editable lead and its research context together. Imports preserve existing records rather than silently overwriting them; OpenStreetMap discoveries remain a separately attributed collection rather than being automatically merged into private leads.
+
+<details>
+<summary>View the lead detail screen</summary>
+
+![Lead detail for Demo Cedar Studio, showing editable synthetic details and the existing intelligence interface](docs/screenshots/portfolio-lead-detail-desktop.jpg)
+
+</details>
+
+### Evidence before priority
+
+Assessments distinguish evidence coverage from priority. Missing observations remain unknown; they are not converted into invented problems, contact details, or sales predictions. Official website association and qualifying evidence are required before a numeric priority is treated as qualified.
+
+![Opportunity assessment for a synthetic lead, retaining unknown and unverified states because no external research was performed](docs/screenshots/portfolio-assessment-desktop.jpg)
+
+The demonstration assessment is calculated by the real local scoring code from synthetic records. No website findings, contacts, successful audits, or AI outputs were fabricated to populate the screenshots.
+
+### Import and discovery are separate workflows
+
+**Manual URL / CSV import** uses user-supplied records and does not fetch those websites. CSV input supports a required `website_url` header and optional `business_name`, `category`, `location`, `status`, and `notes` columns. Limits are 1 MiB and 500 rows; valid rows save together, while duplicates and invalid rows are reported.
+
+![Actual CSV import interface, including accepted headers, limits, and row-handling guidance](docs/screenshots/portfolio-import-desktop.jpg)
+
+**Discovery** is a separate, explicitly started backend workflow. It supports bounded locations/coordinates, categories or literal keywords, result limits, website-tag filters, persisted progress, cancellation, and source review. It is not an exhaustive directory. Missing source website tags do not prove that a business has no website.
+
+![Business discovery interface with OpenStreetMap attribution and the provider deliberately disabled for screenshot capture](docs/screenshots/portfolio-discovery-desktop.jpg)
+
+Saving source records requires selection and a licensing acknowledgement. Review [provider bounds, attribution, and ODbL obligations](docs/discovery-provider.md) before enabling discovery or sharing source-derived information.
+
+<details>
+<summary>View the website audit interface</summary>
+
+![Website Audit interface with explicit permission controls and no fabricated completed audit](docs/screenshots/portfolio-audit-desktop.jpg)
+
+</details>
+
+## Across screens and themes
+
+Cream surfaces, coffee-colored typography, restrained borders, and a compact compass mark give the interface a calm visual identity. CSS variables define light and dark palettes; the theme preference persists in browser storage and can follow the device setting.
+
+![ClientScout AI dashboard in its coffee dark theme using the same synthetic data](docs/screenshots/portfolio-dashboard-desktop-dark.jpg)
+
+| Tablet dashboard · 768px | Mobile dashboard · 390px |
+| --- | --- |
+| ![Tablet dashboard rendered at a 768px viewport](docs/screenshots/portfolio-dashboard-tablet.jpg) | ![Mobile dashboard rendered at a 390px viewport](docs/screenshots/portfolio-dashboard-mobile.jpg) |
+
+<details>
+<summary>View mobile navigation and settings</summary>
+
+![Mobile navigation drawer with the implemented workspace destinations](docs/screenshots/portfolio-navigation-mobile.jpg)
+
+![Settings with theme choices, temporary local backend connection, and application information](docs/screenshots/portfolio-settings-desktop.jpg)
+
+</details>
+
+Screenshots are genuine renders of the **local development working tree**, including pending 5.2 changes. They use a separate temporary SQLite database containing eight clearly fictional `Demo` records on reserved `.example` domains. No real lead database, profile, contact records, emails, phone numbers, private notes, or credentials were copied. Browser mutations and external requests were blocked; backend providers were disabled and outbound connections blocked. Counts and empty/unknown states are actual application results from that synthetic database.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    UI[React and React Router] --> Proxy[Vite same-origin /api proxy]
+    Proxy --> API[FastAPI and Pydantic]
+    API --> Services[Lead, import, audit, discovery, intelligence and research services]
+    Services --> ORM[SQLAlchemy]
+    ORM --> DB[(Local SQLite)]
+    Migrations[Explicit Alembic migrations] --> DB
+    API --> Profile[Local confirmed-profile JSON]
+    Services -. Explicit permitted requests .-> Providers[Overpass, Wikidata, PageSpeed or Gemini]
+```
+
+Provider edges describe implemented, separately controlled adapters. They do not mean that the offline Research foundation automatically calls those services.
+
+### Frontend
+
+[React 19](frontend/package.json), TypeScript, and Vite form the application shell. React Router maps pages for Overview, Research, Find Leads, Website Audit, Saved Leads, intelligence details, Proposal Studio, and Settings. Components handle imports, forms, discovery review, evidence, profile editing, and consistent resource states.
+
+The service layer uses typed requests, response validation for resource families, timeouts, and cancellation. Shared hooks handle loading/error states, health polling, themes, and AI-job status. Styling combines Tailwind's Vite integration with application CSS and semantic theme tokens; icons come from Lucide React. Health is checked on opening, every 30 seconds, and on request.
+
+### Backend and API
+
+FastAPI exposes Pydantic-validated routes under `/api`. SQLAlchemy sessions handle persistence; separate managers coordinate audits, discovery, enrichment, AI jobs, and the offline research worker. Job state, usage bounds, cancellation, and recovery are represented explicitly rather than simulated with progress percentages.
+
+| API family | Current responsibility |
+| --- | --- |
+| `GET /api/health` | API reachability and required migrated-schema checks |
+| `/api/dashboard` and `/api/leads` | Workspace totals and lead CRUD/search/pagination |
+| `POST /api/imports/csv` | Validated, bounded local CSV import |
+| `/api/audits` | Audit configuration, explicit starts, history, read, and cancellation |
+| `/api/discovery` | Source configuration, explicit searches, history, cancellation, review-save, and saved records |
+| `/api/intelligence` | Targets, contacts/enrichment, assessments/filters, local profile, drafts/review, and optional AI jobs/usage |
+| `/api/research` | Offline foundation jobs, worker status, controls, and activity |
+
+Inspect the running local `/docs` for the exact schema of your checkout. Pending local 5.2 adds `/api/research/jobs/{job_id}/discovery` preparation, approval, dispatch, control, events, and results routes; those additions are **not included in this documentation-only commit**.
+
+Network-facing adapters remain backend-only. Audits/enrichment include public-address validation, DNS pinning, TLS verification, redirect and response-size limits, and robots/access checks. Local Host/CORS/Origin restrictions exist, but they do not constitute a multi-user authentication or production isolation system.
+
+### Persistence and migrations
+
+SQLite stores editable leads, audit jobs, source searches/cache and attributed businesses, identities/enrichments, assessments, drafts, AI usage, and research plans/jobs/steps/attempts/events/leases. A confirmed freelancer profile is stored in an ignored JSON file beside the configured database; it is not a browser credential store.
+
+| Migration | Adds |
+| --- | --- |
+| `0001_leads` | Lead records, source metadata, and uniqueness/status constraints |
+| `0002_audits` | Persisted audit jobs and evidence |
+| `0003_discovery` | Source searches, cache, and saved discovered businesses |
+| `0004_discovery_diagnostics` | Source request diagnostics |
+| `0005_intelligence` | Business identities, enrichment, contacts, assessments, drafts, and AI usage |
+| `0006_ai_jobs` | Durable AI request/result job fields |
+| `0007_research_foundation` | Offline research revisions, jobs, steps, attempts, approvals, events, and worker lease |
+| `0008_research_discovery` | **Pending local 5.2 work only:** supervised-discovery execution/grant/request/result/activity tables |
+
+Startup does **not** apply migrations automatically. Committed 5.1 source expects revision `0007_research_foundation` and reports API version `0.5.1`; the audited local 5.2 working tree expects `0008_research_discovery` and reports `0.5.2`. Use migrations that belong to the same checkout. Existing checkpoints record prior authorized migrations; this audit did not inspect, connect to, or migrate the user's actual database.
+
+## Project structure
+
+```text
+clientscout-ai/
+├── frontend/
+│   ├── src/
+│   │   ├── pages/             # Workspace, leads, audits, research, proposals
+│   │   ├── components/        # Forms, import, discovery, evidence, profile
+│   │   ├── services/          # API contracts and validated request helpers
+│   │   ├── hooks/             # Resource, theme, health, and AI-job state
+│   │   └── themes/            # Light/dark tokens
+│   ├── package.json
+│   └── vite.config.ts
+├── backend/
+│   ├── app/
+│   │   ├── api/               # FastAPI routers
+│   │   ├── core/              # Shared settings
+│   │   ├── database/          # SQLAlchemy engine and sessions
+│   │   ├── models/            # Persisted application records
+│   │   ├── schemas/           # Pydantic request/response contracts
+│   │   ├── services/          # URL normalization and CSV parsing
+│   │   ├── auditing/          # Bounded public-site checks
+│   │   ├── discovery/         # Discovery lifecycle and persistence
+│   │   ├── intelligence/      # Identity, assessment, drafts, profile
+│   │   ├── providers/         # Explicit external adapters
+│   │   └── research/          # Durable offline foundation
+│   ├── migrations/versions/
+│   ├── tests/
+│   └── requirements.txt
+├── config/local.json          # Shared default ports
+├── docs/                      # Architecture, checkpoints, and screenshots
+├── .env.example               # Optional configuration placeholders
+├── Makefile                   # Feature checks and full validation
+└── README.md
+```
+
+## Local development
+
+The audited environment uses **Node 24.19.0, npm 11.17.0, and Python 3.14.7**. Dependency versions are recorded in `frontend/package.json`, its lockfile, and `backend/requirements.txt`. No dependencies were installed during this documentation task.
+
+### Install in a fresh checkout
 
 ```sh
+git clone --branch feature/checkpoint-5 https://github.com/sahilbhardwaj037037-sys/clientscout-ai.git
+cd clientscout-ai
 python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
-cd frontend
-npm ci
+(cd frontend && npm ci)
 ```
 
-No API key is needed for local scoring/templates, website enrichment or OSM discovery. Gemini assistance requires a backend-only key. Existing installations should rerun the pip install and `npm ci` to install pinned dependencies.
+The installation commands above are instructions for a new development environment. They were not executed against the active project. Do not replace an existing checkout or overwrite its `.env`, database, profile, or ongoing changes.
 
-## Configure once, run locally
+### Start with a separate development database
 
-Both launchers read **config/local.json**, optionally overridden by the repository-root **.env**, then process environment variables. Defaults are API port 8000 and frontend port 5173. API host is always loopback, `127.0.0.1`. The browser always requests same-origin `/api/...`; Vite proxies those requests to the configured backend. Settings displays the effective proxy target. No component contains a separate API port or API base URL.
-
-To change a port, copy `.env.example` to root `.env` and set `CLIENTSCOUT_API_PORT` (and optionally `CLIENTSCOUT_FRONTEND_PORT`) to plain integers. **Restart both servers after changing configuration.** Leave values empty to use shared defaults. Do not configure separate terminal overrides with different values. `VITE_API_BASE_URL` and frontend-directory `.env` overrides are not used for the API connection. Use root `.env` for shared port settings; mode-specific files do not override these settings.
-
-First apply migrations, from the repository root:
+From the root of that fresh checkout, in the backend terminal:
 
 ```sh
-cd backend
-.venv/bin/python -m alembic upgrade head
+# Create an unused directory; no existing database is selected.
+CLIENTSCOUT_PREVIEW_DIR="$(mktemp -d "${TMPDIR:-/tmp}/clientscout-preview.XXXXXX")"
+export CLIENTSCOUT_DB_PATH="$CLIENTSCOUT_PREVIEW_DIR/clientscout-preview.sqlite3"
+export DISCOVERY_ENABLED=false PAGESPEED_ENABLED=false
+export GEMINI_API_KEY= PAGESPEED_API_KEY=
+(cd backend && .venv/bin/python -m alembic upgrade head)
+(cd backend && .venv/bin/python -m app.run)
 ```
 
-Terminal 1, from the repository root:
-
-```sh
-cd backend
-.venv/bin/python -m app.run
-```
-
-Terminal 2, from the repository root:
+In a second terminal, from the same fresh checkout:
 
 ```sh
 cd frontend
 npm run dev
 ```
 
-Open **http://127.0.0.1:5173/** with default settings. Health: **http://127.0.0.1:8000/api/health**; API docs: **http://127.0.0.1:8000/docs**. Use your configured ports if changed. Ctrl+C stops either server. The backend launcher reloads during development. Avoid a separate `uvicorn --port` override: it bypasses the shared port setting and can recreate the reported mismatch.
+With default settings, open **http://127.0.0.1:5173/**. Health is **http://127.0.0.1:8000/api/health** and the API reference is **http://127.0.0.1:8000/docs**. Stop either process with `Ctrl+C`. The application starts empty; screenshot records are temporary demonstration data and are not shipped as a seed dataset.
 
-`/api/health` checks API reachability and the migrated database. Missing migrations or a database failure produce an explicit 503. The header checks on opening, every 30 seconds and on request, with a five-second timeout. Connection errors avoid prescribing an independently hardcoded port.
+This disables discovery, PageSpeed, and Gemini. Website audit/contact enrichment still require external access if deliberately invoked: do not start them during an offline review. The capture environment additionally blocked outbound connections, which these ordinary launch commands do not do.
 
-`npm run build` type-checks and emits `frontend/dist`. `npm run preview` serves the built app on the frontend port plus one with the same API proxy; keep the backend running. Restart/rebuild if you change the configured target after building, so Settings matches the build. This is a local application, not a publicly hosted service.
+### Configuration
 
-## Use leads and imports
+Precedence is **process environment → optional root `.env` → `config/local.json` defaults**. The frontend uses same-origin `/api` requests through Vite's configured proxy; do not add a separate frontend API base URL. Restart both servers after changing shared ports.
 
-**Find Leads:** enter a public website URL; a missing scheme becomes HTTPS. Business name is optional and defaults to the hostname. Supply category/location/status/notes as needed. These are user-provided details; URL imports do not fetch websites; the separate Website Audit workflow collects timestamped observations.
+| Variable | Purpose / default |
+| --- | --- |
+| `CLIENTSCOUT_API_PORT` | Backend port; default `8000` |
+| `CLIENTSCOUT_FRONTEND_PORT` | Vite port; default `5173`; preview uses this value plus one |
+| `CLIENTSCOUT_DB_PATH` | SQLite file; defaults to ignored `backend/data/clientscout.db`; relative paths resolve from the repository root |
+| `DISCOVERY_ENABLED` | Defaults to `true`; set `false` for local review without source searches |
+| `OVERPASS_API_URL` | Permitted HTTPS Overpass endpoint; defaults to the configured public operator |
+| `PAGESPEED_ENABLED`, `PAGESPEED_API_KEY`, `PAGESPEED_DAILY_LIMIT` | Optional backend PageSpeed adapter; daily limit defaults to `10` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_DAILY_LIMIT` | Optional backend AI adapter; model defaults to `gemini-3.5-flash-lite`, daily limit `10` |
 
-**Saved Leads:** search name/website/category/location, filter status, browse 20 items per page, open a lead, edit and save. Statuses are **new, shortlisted, contacted, won, archived**. Editing a status records your choice; marking contacted does not send anything. Delete requires a separate confirmation. Source, original URL, CSV filename where applicable and timestamps appear in details.
+An empty Gemini key disables live AI. PageSpeed's empty enabled flag follows key presence; use explicit `false` to disable it. Keep keys backend-only and out of screenshots, commits, and logs. See [.env.example](.env.example) for the complete current settings.
 
-Deduplication uses a database-enforced unique hostname key: lowercase IDNA hostname, removing a leading `www.` and ignoring scheme, standard port, paths, fragments and query strings. This deliberately treats pages on one hostname as one business; different subdomains remain distinct. Duplicates return the existing lead ID and never overwrite notes or source metadata. A conflicting URL edit rolls back the entire edit.
+## Safe validation
 
-CSV format: comma-separated **UTF-8** (optional BOM), maximum **1 MiB / 500 non-empty rows**. Required column: `website_url`. Optional columns: `business_name,category,location,status,notes`. Unknown/duplicate headers and malformed files are rejected before any writes. Blank status means new. Quote fields containing commas/newlines. Business names default to hostname when omitted. Notes are limited to 10,000 characters.
-
-Valid rows commit together; invalid rows and duplicate websites are skipped with explicit per-line results. CSV rows do not overwrite existing leads. Import success counts come from committed backend results. Uploads are not retained as files; per-lead source filename and original URL are stored. A request timeout may occur after a write; refresh before retrying to check the result. Deduplication protects against duplicate saves.
-
-## Database and migrations
-
-Default database: **backend/data/clientscout.db**, outside frontend assets and ignored by Git along with SQLite sidecar files. `CLIENTSCOUT_DB_PATH` may override this; relative paths resolve from the repository root, regardless of launch directory. Both Alembic and the app use that same setting. The app does not silently create a schema with `create_all`; run `alembic upgrade head` explicitly.
-
-Stop the backend before copying the database for a consistent backup. Preserve your database during upgrades. `alembic downgrade base` drops the leads table and data; it is a destructive rollback, not a routine launch step.
-
-## Tests
-
-From the repository root:
+The [Makefile](Makefile) defines full and feature-focused checks. From a fresh checkout with installed dependencies, use an isolated fallback database and empty provider credentials:
 
 ```sh
-cd backend
-.venv/bin/python -m pytest -q
-.venv/bin/python -m pip check
-.venv/bin/python -m alembic check
+CLIENTSCOUT_TEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/clientscout-tests.XXXXXX")"
+CLIENTSCOUT_DB_PATH="$CLIENTSCOUT_TEST_DIR/fallback.sqlite3" \
+  DISCOVERY_ENABLED=true PAGESPEED_ENABLED=false \
+  GEMINI_API_KEY= PAGESPEED_API_KEY= make check
 ```
 
-From the repository root, in another terminal:
+`DISCOVERY_ENABLED=true` here is **test-process configuration** so mocked discovery paths can be exercised. It is not an instruction to enable a running workspace or start live searches. Backend fixtures use separate migrated temporary databases and mocked transports; the suite blocks live Gemini calls. This audit additionally blocked backend outbound sockets and denied access to the original project.
 
-```sh
-cd frontend
-npm test
-npm run build
-```
+| Command | Responsibility |
+| --- | --- |
+| `make test-backend` | Pytest backend suite |
+| `make test-frontend` | Vitest / Testing Library suite |
+| `make test-leads`, `make test-audits`, `make test-discovery` | Focused workflow checks |
+| `make test-intelligence`, `make test-shell`, `make test-security` | Focused intelligence, shell, and boundary checks |
+| `make check` | Backend tests, frontend tests, TypeScript checking, and Vite build |
+| `cd frontend && npm run preview` | Local built-app preview with the API proxy; requires the backend |
 
-Backend tests migrate separate temporary databases and never write test leads into your workspace database. Live Chrome checks likewise used temporary databases. See [Checkpoint 4 actual results and focused Chrome verification](docs/checkpoint-4-results.md).
+For individual test targets, apply the same isolated database and provider environment as above. No lint script is configured; the build's `tsc -b` performs TypeScript checking.
 
-## Versions, security and remaining scope
+**Audit results:** 665 backend tests passed with two third-party deprecation warnings; 92 frontend tests passed in nine files; TypeScript/Vite build passed. These counts describe the **local working tree including uncommitted 5.2 tests**, not the test count of a fresh 5.1 checkout. Browser checks covered 1440px, 768px, 390px, and 320px with the temporary synthetic database. No live-provider, paid-AI, outreach, production, or real-data acceptance was performed.
 
-Frontend remains React 19.3.0, React Router 7.18.4, Vite 8.3.4, TypeScript 7.0.2, Tailwind 4.3.3 and Vitest 5.0.4. Added SQLAlchemy **2.1.4**, Alembic **1.20.0** and python-dotenv **1.2.4**; FastAPI **0.143.0** and Uvicorn **0.54.0** remain pinned. Migrations follow [Alembic's official workflow](https://alembic.sqlalchemy.org/en/latest/tutorial.html); SQLite sessions explicitly manage transactions and savepoints following [SQLAlchemy's SQLite guidance](https://docs.sqlalchemy.org/en/20/dialects/sqlite.html).
+## Development status
 
-[Architecture](docs/architecture.md), [design system](docs/design-system.md), [checkpoint checklist](docs/phase-1-checklist.md).
+| State | Verified boundary |
+| --- | --- |
+| **Implemented in the tracked branch** | Checkpoints 1–4 lead/import/audit/discovery/intelligence/draft functionality, plus the 5.1 durable offline research foundation |
+| **Implemented locally; pending integration** | 5.2A supervised-discovery infrastructure and migration 0008; 5.2B separate preparation/approval/dispatch controls, source-evidence classification, and persistent save receipts. Local automated tests cover these additions; their code and checkpoint notes remain uncommitted and are not published by this task. |
+| **Needs separate live acceptance** | Provider availability, supervised-discovery dispatch, genuine active-process crash/pause timing, and current end-to-end external AI delivery; mocked tests do not establish these outcomes |
+| **Proposed / deferred** | Broader E2E, performance/accessibility/security review and CSV export appear in earlier planning notes. They are not claimed complete; older checklists also contain superseded checkpoint status. |
+| **Not currently operational** | Scheduled autonomous research, notifications, automatic outreach, cloud sync, and a production multi-user service |
 
-Both servers bind to localhost, with controlled local CORS/Hosts and rejection of writes with foreign browser Origins. Keys never belong in frontend code or logs; `.env` is ignored. URL checks reject non-HTTP schemes, credentials, private/local/reserved literal addresses and unusual ports. Website Audit makes limited public requests with pinned DNS, redirect revalidation, robots.txt checks and TLS verification; URL import alone makes no requests. No prohibited scraping, automated sending, CSV export, cloud sync, publishing or deployment is implemented. Contact research and Gemini assistance require explicit consent; private notes and contact values are excluded from AI requests.
+The next development step is review and integration of the pending 5.2 work under its existing approval and data-protection boundaries. This documentation task does not change the roadmap, enable providers, or implement later checkpoints. No release dates or completion percentage are asserted. APIs, schemas, UI, and workflows may change as development continues.
 
-**Stop for review here. Checkpoint 4 is implemented; final commit/push requires explicit approval.** Checkpoint 5 is not started.
+![Research foundation interface from the current working tree, with no fabricated completed jobs or external results](docs/screenshots/portfolio-research-desktop.jpg)
 
+**Deployment:** local frontend/backend operation was verified in an isolated development environment. No public deployment was verified, and no deployment configuration or workflow is tracked in the audited repository. A successful frontend build is not evidence of a deployed or production-ready service.
 
-## Website auditor — Checkpoint 3A
+## Development-stage boundaries
 
-Open **Website Audit**, enter a public URL and confirm that you have permission and that the site's terms allow analysis. Saved lead details offer **Audit this website** and **View saved audits**. Each run persists separately; it never overwrites lead notes, status or business details. No lead score or proposal is generated.
+This is a loopback-bound, single-user workspace. Use one backend worker; existing managers are not a production multi-worker architecture. Source coverage can be partial, assessments are not predictions, and AI prose remains factually unverified even after human acknowledgement. No email, direct message, contact form, or business communication is sent automatically.
 
-The auditor checks public DNS and socket addresses, robots.txt, redirects, HTTP availability, HTTPS/TLS, static HTML title, meta description, canonical tags, H1 count, document language, viewport, images lacking alt attributes and robots/noindex directives. Findings include observed values, source URLs and timestamps, with recommendations for human review. Canonical URLs, images and scripts are not fetched. A viewport declaration is a mobile signal, not proof of mobile usability.
+Sensitive runtime files belong outside Git. The audit found no tracked `.env`, local database, private-key files, or recognized credential patterns in the tracked source. That focused review is not a complete vulnerability audit or a guarantee of all dependency security. Original databases, profile, migrations, configuration, and pending development were preserved.
 
-Run status/progress, history, retry, cancellation and errors are visible. Retry creates a new report and respects cooldowns. Cancellation stops local work and persists cancelled state; a request already delivered to Google cannot be recalled. Completed reports survive restarts. Interrupted runs are marked interrupted and are never automatically resumed. No simulated progress percentages, results, rankings or metrics exist.
+## Credits and licensing
 
-### Optional Google PageSpeed configuration
-
-The HTML audit works with no key. In root `.env`, set **PAGESPEED_ENABLED=true** to allow explicitly selected keyless measurements, or set a backend-only **PAGESPEED_API_KEY**. A key enables the option unless PAGESPEED_ENABLED=false. **PAGESPEED_DAILY_LIMIT** defaults to 10 attempted calls per rolling 24 hours; allowed values are 1 through 100. Restart the backend after changes. Use the checkbox for each new audit; ordinary HTML runs never call Google. No key is entered in the browser or returned by the config endpoint.
-
-PageSpeed receives the permitted final URL, with mobile strategy. Only actual supported numeric Lighthouse lab metrics, Google performance score and Google's estimated savings are shown; missing metrics remain absent. Results are separate from static HTML evidence and this machine's document-transfer timing. No real-user CrUX metrics are claimed. Quota, runtime, invalid response, timeout and API errors leave the HTML report intact with a **partial** status and explicit missing mobile measurements. There are no automatic provider retries. Attempt counts and provider Retry-After cooldowns persist locally.
-
-Google documents [keyless use and API-key configuration](https://developers.google.com/speed/docs/insights/v5/get-started) and the [mobile strategy/response fields](https://developers.google.com/speed/docs/insights/v5/reference/pagespeedapi/runpagespeed). Keyless shared quota can be exhausted; a key does not guarantee available quota. This app does not create a cloud project, enable paid services, configure billing or promise unlimited free calls. Review your provider account's current quotas/terms before enabling it. Selecting PageSpeed sends the public URL to Google; avoid URLs containing private query information.
-
-### Network safety and access limits
-
-- Public HTTP/HTTPS only, standard ports, no embedded credentials. Every DNS answer must be public; private, loopback, link-local, reserved/multicast, mapped/transition IPv6 and metadata addresses are blocked. The validated literal IP is used for the socket while original Host/TLS SNI remain intact, preventing a second hostname lookup. Environment proxies are not used.
-- TLS verification uses the pinned Certifi CA bundle; certificate and hostname checking remain enabled. Certificate failures stop the request.
-- At most five page redirects and five robots redirects; each target is revalidated. HTTPS downgrades, private redirects and loops stop. Each destination origin's robots policy is checked before its page is fetched.
-- Robots wildcard/agent rules use Protego 0.7.0. Missing robots (404/410) allows this limited request; auth denial, 429/5xx, HTML challenges or lookup failure stop. Crawling delays/request-rate extensions are respected. Unsupported visit windows or delays over 10 seconds stop instead of bypassing the restriction. Terms cannot be established from robots alone; the user's permission confirmation is required.
-- Two active runs maximum; at least 10 seconds between starts globally, 60 seconds per normalized hostname, and at least two seconds between website requests to a hostname. Server Retry-After can extend the cooldown. Start/budget restrictions survive restart. Use one backend process; multiple workers are not supported.
-- DNS/connect timeouts: 5 seconds. Ordinary read timeout: 8 seconds; request total: 12 seconds. Document stage: 35 seconds. PageSpeed stage/read: up to 60 seconds. Entire run: 100 seconds. Limits include redirect chains and robots checks.
-- Body limits: HTML 2 MiB, robots 512 KiB, PageSpeed 4 MiB, with both wire and decoded single-member gzip sizes checked. Concatenated gzip and other content encodings are explicitly unsupported. No login, cookies, challenge bypass, browser rendering, recursive crawl or unattended scheduling.
-
-Reports retain bounded extracted signals and request evidence, not full HTML or screenshots of target websites. Static source may differ from JavaScript-rendered content. A single response is not an uptime history, full SEO/accessibility audit or sales prediction. Google performs its own external analysis and redirects; this backend does not control Google's browser. See [auditor architecture](docs/architecture.md) and [actual verification](docs/checkpoint-3a-results.md).
-
-## Efficient development verification
-
-From repository root, use `make test-intelligence`, `make test-discovery`, `make test-audits`, `make test-leads`, `make test-shell` or `make test-security` for the affected area. Use `make check` once at checkpoint completion for the full offline test suite and TypeScript/build checks. `npm run test:watch -- src/Audits.test.tsx` from frontend supports focused iteration. Failures and warnings remain visible with concise output.
-
-The [test efficiency review](docs/testing-strategy.md) explains why all security/database/API/persistence tests were retained, the strengthened cancellation assertion, test selection and which historical browser runs overlap. Browser checks remain explicit; no live provider calls are made by the ordinary automated suite.
-
-## Business discovery — Checkpoint 3B
-
-Find Leads offers OpenStreetMap through Overpass, location/coordinates, business category/name keyword, 1–50 results (default 10), and optional website-tag filter. Location accepts **City, country**, exact labels, coordinates or an OSM administrative relation ID. Auto uses small administrative boundaries with a bounding box capped at **16 km² / 5 km per side**, otherwise a labelled nearby sample. Nearby radius is **500 m, 1 km or 2 km**. This is not a complete city/country directory; ambiguity stops before POI requests. Coverage and business details are unverified. Missing website tags never become invented URLs.
-
-Review returned records, select businesses and acknowledge ODbL before saving. Saved Leads displays a separate attributed source collection, including businesses without websites. Existing manual/CSV lead CRUD, statuses, notes and website-required schema remain intact. Dashboard shows the actual saved discovery count separately. Progress, cancellation, errors, manual retry and persisted history use real backend job state.
-
-No API key is needed. Apply `alembic upgrade head` through **0004_discovery_diagnostics**. Optional backend-only `.env`: `DISCOVERY_ENABLED=false` disables new searches; `OVERPASS_API_URL` overrides the default public HTTPS endpoint. Shared public Overpass has no SLA. One active job, 30-second start spacing, 20 starts/24h, 24-hour cache, body/time caps, bounded backoff and pinned public-IP/TLS transport constrain requests. Restart the backend after configuration changes.
-
-Read [provider selection, terms, ODbL obligations, configuration and limitations](docs/discovery-provider.md) before sharing source-derived data or changing providers. Source views retain attribution/license links. No database/export/private notes are committed to GitHub. See [Checkpoint 3B verification and Git integration](docs/checkpoint-3b-results.md).
-
-### Diagnosing discovery failures
-
-Expand **Request diagnostics** on a new run for the actual query, stage, HTTP status and bounded provider remark. HTTP 200 can contain a timeout/memory/syntax error; it is not proof of throttling. Historical jobs lacking captured responses remain explicitly unknown. **Prepare 500 m nearby fallback** changes controls without an automatic provider call; review location/scope and respect cooldowns before starting. Large boundary-only searches are refused before POI requests. See [London failure investigation](docs/discovery-diagnostics-results.md).
-
-
-## Contact enrichment, identity, priority and proposals — Checkpoint 4
-
-Open a saved manual/CSV lead or **Saved Leads → Lead intelligence and advanced filters**, then select a private lead or saved discovery record. Confirm permitted access before **Enrich business contacts**. Confirm official website association separately; conflicting published name/domain/locality/coordinates still stop website-contact merging. Social profiles are linked for review, never fetched. Only published role/business emails are collected; staff addresses and guessed contacts are excluded. Each contact retains source, status, retrieval time and available licence/attribution. Missing data means unobserved in bounded sources, never proof of absence. Existing OSM records may lack contact tags until a new explicit discovery search.
-
-Research visits at most three permitted same-domain pages and eight requests including robots/redirects, within 75 seconds. It reuses identical completed checks for 24 hours, allows one active job, ten starts per rolling day, ten seconds between starts and a shared per-host audit/enrichment cooldown of at least 60 seconds. Robots restrictions, TLS/public DNS pinning, body limits and cross-domain redirect refusal remain. Optional Wikidata checks use only the existing business entity ID, verify name/type, retain CC0 attribution and treat website candidates as unverified. Brand IDs are never substituted.
-
-**Assess opportunity** computes versioned deterministic evidence priority: website opportunities 35, static audit/lab potential 25, official self-described independence 15, observed contacts 15 and supported skills 10. Unknown components remain unassessed; a missing website or provider error receives no invented failure score. Qualification requires a current matching identity and official association plus successful website evidence. Coverage is separate from priority, and neither is a sales prediction. Size/ownership are source self-descriptions or unknown, not inferred revenue or employee counts. Filters include category, segment, website state, contact availability, score and explicit major-chain inclusion.
-
-**Proposal Studio** supports email, WhatsApp, contact form, LinkedIn DM and Instagram DM drafts. Review identity/evidence first, choose Local Template or Gemini AI Writer, edit subject/body and save locally. New AI drafts require explicit human acknowledgement before copying for manual outreach. Nothing is sent. Offered services and links are allowlisted; AI factual prose remains unverified and may contain unsupported claims that the user must correct. Business changes, superseding source checks and evidence older than 24 hours block new generation until verification/assessment is refreshed. Saved drafts remain editable historical records.
-
-For optional Gemini, set **GEMINI_API_KEY** in ignored root `.env`; optionally set **GEMINI_MODEL** (default `gemini-3.5-flash-lite`, required for AI Writer) and **GEMINI_DAILY_LIMIT** (default 10, range 1–100), then restart the backend. The official `google-genai` SDK sends bounded approved public context to a fixed Google endpoint after explicit consent; the writer receives approved observations, confirmed eligible services and optionally selected public profile details. Contact values, private notes, raw HTML and user draft edits stay local. AI Writer returns structured subject/body prose only. The prose is stored directly after validation; deterministic scoring remains unchanged. The separate assessment context helper still selects approved IDs. No tools, automatic SDK retries or model fallback; one separately budgeted application retry is allowed for HTTP 500/503. HTTP 429 creates a one-hour local cooldown. Account quota/billing still applies. GET `/api/intelligence/usage` exposes actual request counts, token measurements when returned, and recent status; absence of measured tokens is explicit.
-
-Migrations **0005_intelligence** and **0006_ai_jobs** preserve existing lead/audit/discovery data and add local identities, enrichment/contact observations, assessments, drafts and asynchronous AI usage records. Interrupted jobs are marked on restart without automatic external calls. Deleting a business cascades its linked intelligence/drafts. Run one local backend worker. **The user confirmed a successful live Gemini email workflow; this audit uses offline tests and makes no live provider request.**
-
-
-## Gemini AI Writer and freelancer profile
-
-Local Template remains the unchanged offline deterministic composer. Gemini AI Writer uses only the configured `gemini-3.5-flash-lite`, with no silent model/API/template fallback. Existing Gemini-assisted drafts retain their original descriptions; new written drafts carry `human-reviewed-v1` provenance. Saved and unsaved historical drafts remain accessible.
-
-In Proposal Studio, expand **Freelancer profile and proof of work**. Confirm the services you actually offer. Optionally add a public name, portfolio, professional Instagram and up to five relevant completed projects or existing demos. Confirm that these are public facts and links you own or may share; there is no automatic ownership/existence verification or fetching. Changing the form clears its confirmation. The profile is atomically saved in ignored `freelancer-profile.json` alongside the configured database; preserve that file with your backups. No database migration is required.
-
-An AI request requires evidence review and explicit public-data consent. Profile experience and links require the additional **Include my confirmed public experience** option, off by default. Only services matching the assessment and relevant confirmed projects reach the writer. Missing optional details are omitted. Demo/walkthrough offers require a separate saved approval and existing relevant work; no free custom demo, timeline or specific deliverable is promised. Private lead notes, contacts, draft edits, raw HTML and backend secrets are excluded from the prompt.
-
-Option A — Human-Reviewed AI Writer is the current writer mode. Gemini writes the complete subject/body naturally from bounded public evidence and eligible confirmed capabilities; it does not have to copy canonical phrases or declare its own grounding. New drafts use `human-reviewed-v1` metadata and display **AI-generated · Unverified · Review required**. Historical `ai-writer-v1` and older Gemini-assisted drafts retain their existing provenance and wording. Local Template remains unchanged.
-
-Only outputs passing hard privacy, schema, authorization, control/markup, link and prohibited-commitment checks are stored locally. Unknown factual assertions are unverified content for human review, not automatically verified facts. The prompt requests appreciative, non-critical, business-friendly prose, verified experience only and optional authorized existing-project walkthroughs. It prohibits invented metrics, problems, relationships and achievements. Users must check and correct factual accuracy; deterministic checks cannot prove natural-language truth.
-
-Save a draft, review its exact saved text, explicitly acknowledge review, then choose **Mark ready for manual outreach**. Saving alone is not approval. Editing immediately disables readiness and sends a content-free revocation request; saving changed text also revokes readiness on the server. Copying is enabled only after human review for this mode. No email/DM/form is sent or opened automatically. Human review never means automated factual verification.
-
-The user approved this limited retention policy: hard-check-passing, factually unverified subject/body may be kept in the existing local draft row for review and reload recovery. **Discard draft** deletes that new draft's content/evidence and clears job reopening references; content-free usage remains. No raw response logs, claim-text duplicates or new recovery copies are created. Hard-blocked output is neither displayed nor retained; errors contain only static diagnostics, versions and sanitized usage. Historical drafts cannot be discarded through this new endpoint. No database migration is required.
-
-The former exact-phrase validators and their mocked regressions remain as historical protocol coverage, not as production Option A acceptance rules. See [Option A policy and verification](docs/option-a-human-reviewed-writer.md) and the [earlier audit/design](docs/gemini-writer-reliability.md). Automated Option A verification uses mocks; the user separately confirmed a live email workflow.
+- Repository: [sahilbhardwaj037037-sys/clientscout-ai](https://github.com/sahilbhardwaj037037-sys/clientscout-ai).
+- OpenStreetMap source records require **© OpenStreetMap contributors** attribution and carry **ODbL 1.0** obligations. See [OpenStreetMap copyright](https://www.openstreetmap.org/copyright), [ODbL](https://opendatacommons.org/licenses/odbl/1-0/), and the repository's [provider policy](docs/discovery-provider.md). Do not publish a workspace database or private lead notes as part of a portfolio.
+- Optional Wikidata observations retain **CC0** provenance. Their presence does not independently verify a business's website or identity.
+- The UI uses React, React Router, Tailwind CSS, and Lucide React; the backend uses FastAPI, Pydantic, SQLAlchemy, Alembic, and optional provider libraries. Dependency licensing remains governed by each dependency's own terms.
+- Screenshots show this application's actual UI with synthetic local records; they contain no generated mockups or fabricated provider results. Existing historical screenshots and checkpoint documents were preserved.
+- No root `LICENSE` file is present. No permissive project-code license, asset ownership, or third-party reuse permission is asserted by this README.
